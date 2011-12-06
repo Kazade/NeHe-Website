@@ -1,0 +1,18 @@
+{% extends "admin_base.html" %}
+
+{% block content %}
+<table cellpadding="0" cellspacing="0" border="0" id="list_table">
+    <tr>
+        <th>Title</th>
+        <th>Author</th>
+        <th>Date Created</th>
+    </tr>
+{% for article in articles %}
+    <tr class="article_row {% if forloop.odd %} odd {% else %} even {% endif %}">
+        <td><a href="{% url articles.views.article_edit article.pk %}">{{article.title}}</a></td>
+        <td>{{article.author}}</td>
+        <td>{{article.created_time}}</td>
+    </tr>
+{% endfor %}
+</table>
+{% endblock %}

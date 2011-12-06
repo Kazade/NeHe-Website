@@ -1,0 +1,13 @@
+{% extends "admin_base.html" %}
+
+{% block content %}
+<div class="container">
+	{% for model in model_types %}
+		<div>
+			<a href="/_admin/{{model.url_slug}}/">{{model.text}}</a>
+		</div>
+	{% endfor %}
+</div>
+
+
+{% endblock %}

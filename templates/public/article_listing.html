@@ -1,0 +1,36 @@
+{% extends "public_base.html" %}
+
+{% block title %}NeHe Productions: {{article.title}}{% endblock %}
+
+{% block content %}
+<div id="news_container">
+    <div class="news_header">
+        <h1>Articles </h1>
+    </div>
+    {% if not articles.object_list %}
+        <p>
+            None available
+        </p>
+    {% endif %}
+    {% for post in articles.object_list %}
+        <div class="news_box">
+            <div class="title">
+                {{post.title|upper}}
+            </div>
+            <div class="body">
+                {{post.get_summary|safe}}
+            </div>
+            <div>
+            	<p>
+            		<strong><a href="/article/{{post.url_name}}/{{post.pk}}/">CONTINUE READING</a></strong>
+            	</p>
+            </div>
+        </div>        
+    {% endfor %}
+    <div>
+    	<div style="text-align: center; width: 150px; float: left;">{% if articles.has_previous %}<a href="/article_index/{{articles.previous_page_number}}/">Newer Posts</a>{%endif%}</div>
+    	<div style="text-align: center; width: 150px; float:right;">{% if articles.has_next %}<a href="/article_index/{{articles.next_page_number}}/">Older Posts</a>{%endif%}</div>
+    	<div style="clear:both;"></div>
+    </div>
+</div>
+{% endblock %}

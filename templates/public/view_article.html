@@ -1,0 +1,81 @@
+{% extends "public_base.html" %}
+
+{% block title %}NeHe Productions: {{article.title}}{% endblock %}
+
+{% block adsense %}
+    {% if not article.author.profile.adsense_code %}
+        {{block.super}}
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+<div id="article_container">
+<h1>{{article.title}}</h1>
+{{article.html_content|safe}}
+
+{% if article.comments_enabled %}
+<div class="comment_section">
+<!-- START: Livefyre Embed -->
+<script type='text/javascript' src='http://livefyre.com/wjs/javascripts/livefyre.js'></script>
+<script type='text/javascript'>
+    var fyre = LF({
+        site_id: 287475,
+        version: '1.0'
+    });
+</script>
+<!-- END: Livefyre Embed -->
+{% endif %}
+</div>
+</div>
+
+{% endblock %}
+
+{% block preload_js %}
+{% if article.author.profile.flattr_link %}
+<script type="text/javascript">
+/* <![CDATA[ */
+    (function() {
+        var s = document.createElement('script'), t = document.getElementsByTagName('script')[0];
+        s.type = 'text/javascript';
+        s.async = true;
+        s.src = 'http://api.flattr.com/js/0.6/load.js?mode=auto';
+        t.parentNode.insertBefore(s, t);
+    })();
+/* ]]> */
+{% endif %}
+</script>
+{% endblock %}
+
+{% block narrow_col_right %}
+
+{% if article.author.profile.flattr_link %}
+<h3 style="text-align: center">Support this Author</h3>
+<p style="text-align: center">
+<a class="FlattrButton" style="display:none;" href="http://nehe.gamedev.net"></a>
+<noscript><a href="{{article.author.profile.flattr_link}}" target="_blank">
+<img src="http://api.flattr.com/button/flattr-badge-large.png" alt="Flattr this" title="Flattr this" border="0" /></a></noscript>
+</p>
+{% endif %}
+
+
+<div style="text-align: center; padding:10px;">
+{% if article.author.profile.adsense_code %}
+<script type="text/javascript"><!--
+google_ad_client = "{{article.author.profile.adsense_code}}";
+/* Nehe_Skyscraper */
+google_ad_slot = "6284221953";
+google_ad_width = 160;
+google_ad_height = 600;
+//-->
+</script>
+<script type="text/javascript"
+src="http://pagead2.googlesyndication.com/pagead/show_ads.js">
+</script>
+{% else %}
+
+<script type='text/javascript'>
+    GA_googleFillSlot("Skyscraper_NeHe");
+</script>
+{% endif %}
+</div>
+{% endblock %}

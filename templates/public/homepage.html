@@ -1,0 +1,71 @@
+{% extends "public_base.html" %}
+
+{% block title %}NeHe Productions - Everything OpenGL{% endblock %}
+
+{% block extra-head %}
+<meta name="google-site-verification" content="zLpjthumtTXE3PiQDaKSFdLdkznFgVXj0PJyS-HjKag" />
+{% endblock %}
+
+{% block content %}
+
+<div id="news_container">
+    <div class="news_header">
+        <img src="/static/images/nehe_news.jpg" border="0" />
+    </div>
+    {% if not news_posts %}
+        <p>
+            None available
+        </p>
+    {% endif %}
+    {% for post in news_posts.object_list %}
+        <div class="news_box">
+            <div class="title">
+                <a href="/news/{{post.url_name}}/{{post.pk}}/">{{post.title|upper}}</a>
+            </div>
+            <div class="author">
+                by {% if post.author.profile.homepage_url %}<a href="{{post.author.profile.homepage_url}}">{{post.author}}</a>{% else %}{{post.author}}{% endif %}, posted at {{post.created_time}}
+            </div>
+            <div class="body">
+                {{post.get_summary|safe}}
+            </div>
+            <div>
+            	<p>
+            		<strong><a href="/news/{{post.url_name}}/{{post.pk}}/">CONTINUE READING</a></strong>
+            	</p>
+            </div>
+        </div>        
+    {% endfor %}
+    <div>
+    	<div style="text-align: center; width: 150px; float: left;">{% if news_posts.has_previous %}<a href="?page={{news_posts.previous_page_number}}">Newer Posts</a>{%endif%}</div>
+    	<div style="text-align: center; width: 150px; float:right;">{% if news_posts.has_next %}<a href="?page={{news_posts.next_page_number}}">Older Posts</a>{%endif%}</div>
+    	<div style="clear:both;"></div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block narrow_col_right %}
+{% for block in menu_blocks %}
+<div class="tutorial_block">
+	{% for group in block.get_menu_groups %}
+		<h2>{{group.name}}</h2>
+		<ul>
+			{% if not group.get_articles and not group.get_links %}
+				<li>None available</li>
+			{% endif %}
+			{% for article in group.get_articles %}
+			<li><a href="{{article.kind.description|lower}}/{{article.url_name}}/{{article.pk}}/">{{article.title}}</a></li>
+			{% endfor %}
+			{% for link in group.get_links %}
+			<li>{{link|safe}}</li>
+			{% endfor %}			
+		</ul>
+	{% endfor %}
+</div>
+{% endfor %}
+<div style="text-align: center; padding:10px;">
+<script type='text/javascript'>
+GA_googleFillSlot("Skyscraper_NeHe");
+</script>
+</div>
+{% endblock %}

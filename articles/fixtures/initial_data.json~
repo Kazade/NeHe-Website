@@ -1,0 +1,98 @@
+[
+    {
+        "model" : "articles.ArticleType",
+        "pk" : 1,
+        "fields" : {
+            "description" : "NEWS"
+        }
+    },
+    {
+        "model" : "articles.ArticleType",
+        "pk" : 2,
+        "fields" : {
+            "description" : "TUTORIAL"
+        }
+    },
+    {
+        "model" : "articles.ArticleType",
+        "pk" : 3,
+        "fields" : {
+            "description" : "ARTICLE"
+        }
+    },
+    {
+        "model" : "articles.ArticleType",
+        "pk" : 3,
+        "fields" : {
+            "description" : "PAGE"
+        }
+    },    
+    {
+        "model" : "articles.MenuBlock",
+        "pk" : 1,
+        "fields" : {
+            "name" : "Tutorials",
+            "active" : true,
+            "priority" : 100
+        }
+    },
+    {
+        "model" : "articles.MenuBlock",
+        "pk" : 2,
+        "fields" : {
+            "name" : "Articles",
+            "active" : true,
+            "priority" : 99
+        }
+    },
+    {
+        "model" : "articles.MenuGroup",
+        "pk" : 1,
+        "fields" : {
+            "name" : "Desktop Tutorials",
+            "block" : 1,
+            "priority" : 100,
+            "active" : true
+        }
+    },
+    {
+        "model" : "articles.MenuGroup",
+        "pk" : 2,
+        "fields" : {
+            "name" : "Mobile Tutorials",
+            "block" : 1,
+            "priority" : 99,
+            "active" : true
+        }
+    },
+    {
+        "model" : "articles.MenuGroup",
+        "pk" : 3,
+        "fields" : {
+            "name" : "Legacy Tutorials",
+            "block" : 1,
+            "priority" : 98,
+            "active" : true
+        }
+    },
+    {
+        "model" : "articles.MenuGroup",
+        "pk" : 4,
+        "fields" : {
+            "name" : "Articles",
+            "block" : 2,
+            "priority" : 100,
+            "active" : true
+        }
+    },
+    {
+        "model" : "articles.MenuGroup",
+        "pk" : 5,
+        "fields" : {
+            "name" : "Legacy Articles",
+            "block" : 2,
+            "priority" : 99,
+            "active" : true
+        }
+    }
+]

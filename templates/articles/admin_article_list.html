@@ -1,0 +1,64 @@
+{% extends "admin_base.html" %}
+
+{% block extra-head %}
+<script type="text/javascript">
+function toggle_select_all(obj) {
+	to_toggle = document.getElementsByTagName('input');
+	for(var i = 0; i < to_toggle.length; ++i) {
+		if(to_toggle[i].type == 'checkbox' && to_toggle[i] != obj) {
+			to_toggle[i].checked = obj.checked;
+		}
+	}
+}
+</script>
+{% endblock %}
+
+{% block content %}
+<div id="tool_row">
+	<ul>
+	<li><a href="/_admin/article/add/">Add another</a></li>
+	</ul>
+</div>
+<p>
+	<a href="{% url articles.views.admin_article_list %}">ALL</a> |
+	<a href="{% url articles.views.admin_article_list %}?query=news">NEWS</a> |
+	<a href="{% url articles.views.admin_article_list %}?query=tutorial">TUTORIAL</a> |
+	<a href="{% url articles.views.admin_article_list %}?query=article">ARTICLE</a> |
+	<a href="{% url articles.views.admin_article_list %}?query=page">PAGE</a>
+</p>
+<form action="{% url articles.views.admin_article_list %}" method="post">
+<table cellpadding="0" cellspacing="0" border="0" id="list_table">
+    <tr>
+    	<th><input type="checkbox" name="select_all" onclick="toggle_select_all(this);" /></th>
+        <th>Title</th>
+        <th>Type</th>
+        <th>Author</th>
+        <th>Date Created</th>        
+    </tr>
+{% if not articles %}
+	<tr><td colspan="5" style="text-align: center;">None found</td></tr>
+{% endif %}
+{% for article in articles.object_list %}
+    <tr class="article_row {% cycle 'odd' 'even' %}">
+    	<td><input type="checkbox" name="selected_articles" value="{{article.pk}}" /></td>
+        <td><a href="{% url articles.views.admin_article_edit article.pk %}">{{article.title}}</a></td>
+        <td>{{article.kind.description}}</td>
+        <td>{{article.author}}</td>
+        <td>{{article.created_time}}</td>
+    </tr>
+{% endfor %}
+<tr>
+<td colspan="5" style="text-align:right;">
+<input type="submit" value="Delete" />
+</td>
+</tr>
+<tr>
+<td colspan="5" style="text-align:center;">
+	{% for x in article_paginator.page_range %}
+		<a href="?page={{x}}">{{x}}</a>
+	{% endfor %}
+</td>
+</tr>
+</table>
+</form>
+{% endblock %}

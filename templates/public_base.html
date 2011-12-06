@@ -1,0 +1,103 @@
+<!DOCTYPE html 
+     PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml"
+    dir="{% if LANGUAGE_BIDI %}rtl{% else %}ltr{% endif %}"
+    xml:lang="{% firstof LANGUAGE_CODE 'en' %}"
+    lang="{% firstof LANGUAGE_CODE 'en' %}">
+  <head>
+    <title>{% block title %}{% endblock %}</title>
+
+    <link rel="stylesheet" type="text/css" href="/static/css/public_base.css" />
+    <link type="text/css" rel="stylesheet" href="/static/css/syntax_highlighter/shThemeMidnight.css"/>
+    
+    <link rel="alternate" type="application/atom+xml" title="Atom feed" href="/atom/" />
+    <link rel="alternate" type="application/rss+xml" title="RSS feed" href="/rss/" />
+    
+    <meta name="author" content="Luke Benstead + Carsten Haubold" />
+    <meta name="description" content="OpenGL Tutorials, Demos, Games and More..." />
+    <meta name="keywords" content="opengl, tutorial, article, demo, game, blend, texturemap, lighting, contest, 3D" />
+
+    {% block css %}
+    {% endblock %}
+
+    {% block preload_js %}
+    {% endblock %}
+
+    {% block extra-head %}{% endblock %}
+    
+    {% block adsense %}
+        <script type='text/javascript' src='http://partner.googleadservices.com/gampad/google_service.js'></script>
+        <script type='text/javascript'>
+        GS_googleAddAdSenseService("ca-pub-3167291168602081");    
+        GS_googleEnableAllServices();
+        </script>
+
+        <script type='text/javascript'>
+        GA_googleAddSlot("ca-pub-3167291168602081", "Leaderboard_NeHe");
+        GA_googleAddSlot("ca-pub-3167291168602081", "Skyscraper_NeHe");
+        </script>
+        <script type='text/javascript'>
+        GA_googleFetchAds();
+        </script>
+    {% endblock %}
+    
+  </head>
+
+  <body>
+    <table cellpadding="0" cellspacing="0" border="0" id="layout_table">
+    <tr><td>
+        <div id="header">
+                <a href="/"><img class="logo" class="logo" src="/static/images/nehe.png" border="0" alt="Nehe" /></a>
+        </div>            
+    </td></tr>
+    <tr><td colspan="2">
+            {% include "public/navbar.html" %}    
+    </td></tr>
+    <tr>
+        <td class="col1">
+
+            {% block content %}
+                Main content
+            {% endblock %}
+            <div style="width:728px;padding:0px;margin:auto; margin-top: 10px;">
+                <script type='text/javascript'>GA_googleFillSlot("Leaderboard_NeHe");</script>
+            </div>              
+        </td>
+        <td class="col2">
+            {% block narrow_col_right %}
+			<div style="text-align: center; padding:10px;">
+			<script type='text/javascript'>
+			GA_googleFillSlot("Skyscraper_NeHe");
+			</script>
+			</div>            
+            {% endblock %}
+        </td>
+    </table>
+    <div id="footer">
+        <p>
+			© 1997-2011 <a href="http://www.gamedev.net">Gamedev.net</a>. All rights reserved.<br/>
+			NeHe TM and NeHe ProductionsTM are trademarks of GameDev.net, LLC<br/>
+			OpenGL® is a registered trademark of Silicon Graphics Inc.<br/>
+		</p>        
+    </div>
+
+    {% block js %}
+	    <script type="text/javascript" src="/static/js/syntax_highlighter/shCore.js"></script>
+        <script type="text/javascript" src="/static/js/syntax_highlighter/shBrushCpp.js"></script>
+	    <script type="text/javascript" src="/static/js/syntax_highlighter/shBrushJScript.js"></script>
+	    <script type="text/javascript">SyntaxHighlighter.all();</script>
+    {% endblock %}
+    
+<!-- GoogleAnalytics code -->
+<script src="http://www.google-analytics.com/urchin.js" type="text/javascript">
+</script>
+<script type="text/javascript">
+_uacct = "UA-279474-2"; // Gamedev
+urchinTracker();
+_uff = 0; // Reset for second account
+_uacct = "UA-24180731-1"; // Non-GD
+urchinTracker();
+</script> 
+  </body>
+</html>

@@ -1,0 +1,144 @@
+
+body {
+    margin:0px;
+    padding:0px;
+    font-family: Ubuntu,Arial,sans-serif;
+    color: black;
+}
+
+#tinymce .mceContentBody {
+    color:#ffffff !important;
+}
+
+h1 {
+    background-color: #45AAF7;
+    font-size: 14px;
+    color: white;
+    margin: 0px;
+    margin-bottom: 10px;
+    padding: 5px;
+}
+
+table {
+    border-collapse: collapse;
+    width: 100%;
+}
+
+table th {
+    background-color: #F0F6FE;
+    border: 1px solid #CCC;
+    color: #222;
+    text-align: left;
+    padding: 5px;
+    vertical-align: top;
+}
+
+table td {
+    background-color: white;
+    padding: 5px;
+    border: 1px solid #CCC;
+}
+
+table th label {
+    font-size: 14px;
+    font-weight: normal;
+}
+
+#header {
+    padding: 10px;
+    font-size: 24px;
+    font-weight: bold;
+    color: white;
+    background-color: #444;
+}
+
+a {
+    text-decoration: none;
+    color:#35acc5;
+}
+
+#content {
+    padding: 20px;
+}
+
+#list_table {
+    border: 1px solid gray;
+    width: 100%;
+    background-color: #AAA;
+}
+
+#list_table th {
+    font-weight: bold;
+    border-right: 1px solid gray;
+    border-left: 1px solid gray;
+    padding: 5px;
+}
+
+#list_table td {
+    border-right: 1px solid gray;
+    border-left: 1px solid gray;
+    padding: 5px;
+}
+
+#breadcrumbs {
+    font: 11px Ubuntu, Arial, Helvetica, sans-serif;
+    background-image:url('/static/images/bc_bg.png');
+    background-repeat:repeat-x;
+    height:30px;
+    line-height:30px;
+    color:#9b9b9b;
+    border:solid 1px #cacaca;
+    width:100%;
+    overflow:hidden;
+    margin:0px;
+    padding:0px;
+}
+
+.odd {
+    background-color: #CCC;
+}
+
+.even {
+    background-color: #AAA;
+}
+
+#breadcrumbs li {
+    list-style-type:none;
+    float:left;
+    padding-left:10px;
+}
+
+#breadcrumbs a {
+    height:30px;
+    display:block;
+    background-image:url('/static/images/bc_separator.png');
+    background-repeat:no-repeat;
+    background-position:right;
+    padding-right: 15px;
+    text-decoration: none;
+    color:#454545;
+}
+
+#breadcrumbs a:hover {
+    color:#35acc5;
+}
+
+.home {
+    border: none;
+    margin: 8px 0px;
+}
+
+#tool_row ul {
+    float: right;  
+    height:20px;
+    line-height:20px;
+    overflow: hidden; 
+    margin: 0px;
+    padding: 0px;
+}
+
+#tool_row li {
+    list-style-type:none;
+    float:left;
+    padding-left:10px;
+}

@@ -1,0 +1,99 @@
+body {
+    margin: 0px;
+    padding: 0px;
+
+    background-color: black;
+    color: white;
+
+    font-family: Ubuntu, Arial, sans-serif;
+    font-size: 12px;
+}
+
+a {
+    text-decoration: none;
+    color: #0C5892;
+}
+
+#header {
+    margin-bottom: 20px;
+}
+
+.logo {
+    margin-top: 20px;
+}
+
+#layout_table {
+    width: 960px;
+    margin:0px;
+    padding:0px;
+    margin: auto;
+}
+
+#layout_table .col1 {
+    vertical-align: top;
+}
+
+#layout_table .col2 {
+    width: 220px!important;
+    vertical-align: top;
+}
+
+#layout_table .col3 {
+    width: 21%;
+    vertical-align: top;
+}
+
+#news_container .news_box {
+    margin-right: 10px;
+    margin-bottom: 20px;
+}
+
+#news_container .news_box .title {
+    font-size: 22px;
+    font-weight: bold;
+    color: #0C5892;
+    padding-bottom: 5px;
+}
+
+#news_container .news_box .body {
+    font-size: 14px;
+}
+
+.news_header {
+    text-align: center;
+}
+
+.tutorial_block {
+    padding: 5px;
+    border-bottom: 1px solid #0C5892;
+}
+
+.tutorial_block li {
+    list-style: none;
+    text-indent: -25px;
+}
+
+#footer {
+    clear:both;
+    margin-top: 10px;
+    text-align: center;
+}
+
+#footer p {
+    width: 960px;
+    margin: auto;   
+}
+
+.navbar {
+    height: 30px;
+    line-height: 30px;
+    background-color: #0C5892;
+    margin-bottom: 20px;
+    font-weight: bold;
+}
+
+.navbar a {
+    color: white;
+    margin-left: 10px;
+}
+
