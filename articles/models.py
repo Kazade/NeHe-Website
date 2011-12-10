@@ -92,9 +92,9 @@ class Article(models.Model):
     
     class Meta(object):
         app_label = "articles"
-
+    
     def get_absolute_url(self):
-        return "/%s/%s/%i/" % (self.kind.description.lower(),
+        return "/%s/%s/%i/" % (self.article_type.lower(),
                                self.url_name(),
                                self.pk)
 
@@ -111,8 +111,13 @@ class Article(models.Model):
         if self.published and (self.menu_group or self.article_type == ArticleTypeEnum.NEWS):
             expire_view_by_url("/")
 
+        #Always enable comments for news articles
+        if self.article_type == ArticleTypeEnum.NEWS:
+            self.comments_enabled = True
+        else:
+            self.comments_enabled = False
+
         #FIXME: Expire actual article view
-        
         return super(Article, self).save(*args, **kwargs)
 
         

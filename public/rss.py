@@ -2,6 +2,7 @@ from django.contrib.syndication.views import Feed
 from django.utils.feedgenerator import Atom1Feed
 from articles.models import ArticleType, Article
 from django.core.cache import cache
+import logging
 
 class RssSiteNewsFeed(Feed):
     title = "NeHe site news"
@@ -11,8 +12,8 @@ class RssSiteNewsFeed(Feed):
     def items(self):
         result = cache.get("RSS_NEWS_FEED")
         if result is None:            
-            news_type = ArticleType.objects.get(description="NEWS")
-            result = Article.objects.filter(published=True).filter(kind=news_type).order_by('-created_time')[:20]
+            logging.info("Rebuilding RSS cache")
+            result = Article.objects.filter(published=True).filter(article_type="NEWS").order_by('-created_time')[:10]
             cache.set("RSS_NEWS_FEED", result, 60 * 60)
         return result
 

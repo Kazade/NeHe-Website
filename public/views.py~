@@ -11,39 +11,58 @@ from django.conf import settings
 from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
 from django.views.decorators.cache import cache_page
 
-#Cache the page for two weeks
-@cache_page(60 * 60 * 24 * 14)
+#Cache the response for an hour, the other
+#caching is a fail safe as cache_page doesn't like GET
+#params
+@cache_page(60*60)
 def homepage(request):
-    subs = {}
-    
     try:
         page = int(request.GET.get('page', 0))
     except (TypeError, ValueError):
         page = 0
-        
-    page_start = page * 15
-    page_end = int(page_start + 15)
-    
-    posts = Article.objects.filter(article_type=ArticleType.NEWS).filter(published=True).order_by('-created_time')[page_start:page_end]        
-        
-    subs["news_posts"] = {
-        "object_list" : posts,
-        "next_page_number" : page + 1,
-        "has_next" : True
-    }
-    
-    MENU_BLOCK_KEY = "HOMEPAGE_MENU_BLOCKS"
-    menu_blocks = cache.get(MENU_BLOCK_KEY)
-    if menu_blocks is None:
-        menu_blocks = MenuBlock.objects.filter(active=True).order_by('active','-priority').all()
-        cache.set(MENU_BLOCK_KEY, menu_blocks, 60 * 60 * 24)
-    
-    subs["menu_blocks"] = menu_blocks
 
+    NUM_NEWS_PAGES_TO_KEEP = 5
+    HOME_PAGE_CACHE_KEY = "HOMEPAGE_CACHE_KEY"    
+    
+    #If a page was specified, add it to the cache key
+    if page and page <= NUM_NEWS_PAGES_TO_KEEP:
+        HOME_PAGE_CACHE_KEY += "_%d" % page
+    elif page > NUM_NEWS_PAGES_TO_KEEP:
+        raise Http404("We don't allow access to old pages :(")
+
+    #Try to get from the cache 
+    subs = cache.get(HOME_PAGE_CACHE_KEY)
+    if not subs:
+        #otherwise, hit the datastore :(        
+        subs = {}    
+            
+        page_start = page * 15
+        page_end = int(page_start + 15)
+        
+        logging.info("Rebuilding the homepage cache")
+        
+        posts = Article.objects.filter(article_type=ArticleType.NEWS, published=True).order_by('-created_time')[page_start:page_end]
+        
+        if not len(posts):
+            logging.info("No posts for this page, redirecting...")
+            return HttpResponseRedirect("/")
+            
+        subs["news_posts"] = {
+            "object_list" : posts,
+            "next_page_number" : page + 1,
+            "has_next" : bool(page < NUM_NEWS_PAGES_TO_KEEP)
+        }
+        
+        subs["menu_blocks"] = MenuBlock.objects.filter(active=True).order_by('active','-priority').all()
+        
+        #24 hours!
+        cache.set(HOME_PAGE_CACHE_KEY, subs, 60 * 60 * 24)
+
+    #FIXME: It will reduce CPU if we store the HTML instead of subs in the cache
     return render_to_response("public/homepage.html", subs)
 
-#Cache the page for a week
-@cache_page(604800)
+#Cache the page for 24 hours
+@cache_page(60 * 60 * 24)
 def view_article(request, article_id):
     article = get_object_or_404(Article, pk=article_id)
     
@@ -55,8 +74,8 @@ def view_article(request, article_id):
     subs["title"] = article.title
     return render_to_response("public/view_article.html", subs, context_instance=RequestContext(request))
 
-#Cache the page for 10 minutes
-@cache_page(604800)
+#Cache the page for 24 hours
+@cache_page(60 * 60 * 24)
 def article_listing(request, kind, page):
     articles = Article.get_by_kind(kind).order_by('original_id')
     pages = Paginator(articles, 5)
@@ -91,14 +110,14 @@ def legacy_tutorial_redirect(request):
         return HttpResponsePermanentRedirect(result)
        
     #otherwise calc the redirect url, store it in the cache and return it
-    kind = ArticleType.objects.get(description="TUTORIAL")
-    new_article = get_object_or_404(Article, original_id=old_lesson_id, kind=kind)
+    new_article = get_object_or_404(Article, original_id=old_lesson_id, article_type="TUTORIAL")
         
-    redirect_url = '/tutorial/%s/%i/' % (new_article.url_name(), new_article.pk)
-    cache.set(cache_key, redirect_url, 604800)
+    redirect_url = new_article.get_absolute_url()
+    cache.set(cache_key, redirect_url, 60 * 60 * 24)
     
     return HttpResponsePermanentRedirect(redirect_url)
 
+@cache_page(60*60*24*7)
 def legacy_article_redirect(request):
     old_article_id = request.GET.get('article', None)
     if old_article_id is None:
@@ -114,19 +133,20 @@ def legacy_article_redirect(request):
     if result:
         return HttpResponsePermanentRedirect(result)
         
-    kind = ArticleType.objects.get(description="ARTICLE")
-    new_article = get_object_or_404(Article, original_id=old_article_id, kind=kind)
+    new_article = get_object_or_404(Article, original_id=old_article_id, article_type="ARTICLE")
     
-    redirect_url = '/article/%s/%i/' % (new_article.url_name(), new_article.pk)
-    cache.set(cache_key, redirect_url, 604800)
+    redirect_url = new_article.get_absolute_url()
+    cache.set(cache_key, redirect_url, 60 * 60 * 24)
     
     return HttpResponsePermanentRedirect(redirect_url)
         
+@cache_page(60*60*24*7)
 def legacy_data_redirect(request, url):
     logging.debug("Working out data URL for %s", url)
     return HttpResponsePermanentRedirect(os.path.join(settings.UPLOADED_CONTENT_BASE_URL, "data", url))
   
-@cache_page(604800)  
+#Cache the page for 24 hours
+@cache_page(60 * 60 * 24)
 def legacy_index_page_redirect(request):
     try:
         index = int(request.GET.get("index"))
