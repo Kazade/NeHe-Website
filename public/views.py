@@ -11,10 +11,11 @@ from django.conf import settings
 from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
 from django.views.decorators.cache import cache_page
 
+from .utils import generate_cache_key
+
 #Cache the response for an hour, the other
 #caching is a fail safe as cache_page doesn't like GET
 #params
-@cache_page(60*60)
 def homepage(request):
     try:
         page = int(request.GET.get('page', 0))
@@ -22,7 +23,7 @@ def homepage(request):
         page = 0
 
     NUM_NEWS_PAGES_TO_KEEP = 5
-    HOME_PAGE_CACHE_KEY = "HOMEPAGE_CACHE_KEY"    
+    HOME_PAGE_CACHE_KEY = generate_cache_key(request, [ "page" ])
     
     #If a page was specified, add it to the cache key
     if page and page <= NUM_NEWS_PAGES_TO_KEEP:
@@ -33,6 +34,7 @@ def homepage(request):
     #Try to get from the cache 
     subs = cache.get(HOME_PAGE_CACHE_KEY)
     if not subs:
+        logging.info("Caching with key: %s" % HOME_PAGE_CACHE_KEY)
         #otherwise, hit the datastore :(        
         subs = {}    
             
@@ -43,7 +45,7 @@ def homepage(request):
         
         posts = Article.objects.filter(article_type=ArticleType.NEWS, published=True).order_by('-created_time')[page_start:page_end]
         
-        if not len(posts):
+        if not len(posts) and page != 0:
             logging.info("No posts for this page, redirecting...")
             return HttpResponseRedirect("/")
             
@@ -62,16 +64,23 @@ def homepage(request):
     return render_to_response("public/homepage.html", subs)
 
 #Cache the page for 24 hours
-@cache_page(60 * 60 * 24)
 def view_article(request, article_id):
-    article = get_object_or_404(Article, pk=article_id)
+    cache_key = generate_cache_key(request)
     
-    if not article.published:
-        raise Http404("This article is not published")
-    
-    subs = {}
-    subs["article"] = article
-    subs["title"] = article.title
+    subs = cache.get(cache_key)
+    if not subs:    
+        logging.info("Caching with key %s", cache_key)
+        
+        article = get_object_or_404(Article, pk=article_id)
+        
+        if not article.published:
+            raise Http404("This article is not published")
+        
+        subs = {}
+        subs["article"] = article
+        subs["title"] = article.title
+        cache.set(cache_key, subs, 60 * 60 * 24)
+
     return render_to_response("public/view_article.html", subs, context_instance=RequestContext(request))
 
 #Cache the page for 24 hours
@@ -102,7 +111,7 @@ def legacy_tutorial_redirect(request):
 
 
     #Generate a cache key for the redirect
-    cache_key = "LEGACY_TUTORIAL_REDIRECT_CACHE_%s" % old_lesson_id
+    cache_key = generate_cache_key(request, ["lesson"])
     
     #If the redirect url is in the cache, use it
     result = cache.get(cache_key)    
@@ -127,7 +136,7 @@ def legacy_article_redirect(request):
     except (ValueError, TypeError):
         raise Http404("Invalid id")
 
-    cache_key = "LEGACY_ARTICLE_REDIRECT_CACHE_%s" % old_article_id
+    cache_key = generate_cache_key(request, ["article"])
     result = cache.get(cache_key)
     if result:
         return HttpResponsePermanentRedirect(result)

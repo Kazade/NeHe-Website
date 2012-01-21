@@ -3,6 +3,7 @@ from django.test import TestCase
 from django.test import Client
 
 from django.contrib.auth.models import User
+from django.test.client import RequestFactory
 
 from articles.globs import ArticleType
 from articles.models import Article
@@ -11,6 +12,7 @@ from articles.models import ArticleType as ArticleTypeOld
 from articles.tasks import update_article_types
 
 from google.appengine.api.datastore import Get, Put
+from utils import generate_cache_key, get_possible_url_cache_keys
 
 class DataGenerator(object):
     def new_user(self, username, password="password"):
@@ -76,5 +78,39 @@ class ArticleTypes(TestCase, DataGenerator):
         articles = Article.get_by_kind(ArticleType.ARTICLE)
         self.assertEqual(1, len(articles))
         self.assertEqual(articles[0], a1)        
+        
+class CacheKeyGeneratorTest(TestCase):
+    def setUp(self):
+        self.factory = RequestFactory()
+        
+    def test_cache_key_generation(self):
+        req = self.factory.get("/")
+        self.assertEqual("PAGE_HOME", generate_cache_key(req))
+        
+        req = self.factory.get("/?page=1")
+        self.assertEqual("PAGE_HOME", generate_cache_key(req))
+        
+        req = self.factory.get("/?page=1")
+        self.assertEqual("PAGE_HOME-[(page,1)]", generate_cache_key(req, ["page"]))                
+
+        req = self.factory.get("/?page=1&elephant=2")
+        self.assertEqual("PAGE_HOME-[(page,1)]", generate_cache_key(req, ["page"]))
+
+        req = self.factory.get("/?page=1&elephant=2")
+        self.assertEqual("PAGE_HOME-[(elephant,2),(page,1)]", generate_cache_key(req, ["page", "elephant"]))       
+        
+    def test_possible_cache_keys(self):
+        result = get_possible_url_cache_keys("/", [ ("page", 1), ("page", 2) ])
+        
+        self.assertEqual(4, len(result))
+        self.assertTrue("PAGE_HOME" in result)
+        self.assertTrue("PAGE_HOME-[(page,1)]" in result)
+        self.assertTrue("PAGE_HOME-[(page,2)]" in result)
+        self.assertTrue("PAGE_HOME-[(page,1),(page,2)]" in result)
+        
+        result = get_possible_url_cache_keys("/mypage/something", [ ( "order_by", "id") ])
+        self.assertEqual(2, len(result))
+        self.assertTrue("PAGE_MYPAGE_SOMETHING" in result)
+        self.assertTrue("PAGE_MYPAGE_SOMETHING-[(order_by,id)]" in result)        
         
         
