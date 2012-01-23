@@ -73,8 +73,7 @@ class FileUpload(models.Model):
     
 class Article(models.Model):
     kind = models.ForeignKey(ArticleType, null=True)
-    #FIXME: remove NULL after update
-    article_type = models.CharField(max_length=32, choices=ARTICLE_TYPE_CHOICES, default='', blank=False, null=True)
+    article_type = models.CharField(max_length=32, choices=ARTICLE_TYPE_CHOICES, default=ARTICLE_TYPE_CHOICES[0][0], blank=False)
     author = models.ForeignKey(User)
     created_time = models.DateTimeField(auto_now_add=True)
     modified_time = models.DateTimeField(auto_now=True)
@@ -125,7 +124,7 @@ class Article(models.Model):
         cache_keys.extend(get_possible_url_cache_keys(self.get_absolute_url()))
 
         for key in cache_keys:
-            logging.debug("Clearing cache key: %s" % key)
+            logging.info("Clearing cache key: %s" % key)
             cache.delete(key)
         return result
         
@@ -163,7 +162,11 @@ class Article(models.Model):
         return articles
         
 class UserProfile(models.Model):
-    adsense_code = models.CharField(max_length=255, null=True, blank=True)
+    adsense_code = models.CharField(max_length=255, null=False, blank=True, default='')
+    adsense_slot = models.CharField(max_length=255, null=False, blank=True, default='')
+    leaderboard_adsense_code = models.CharField(max_length=255, null=False, blank=True, default='')
+    leaderboard_adsense_slot = models.CharField(max_length=255, null=False, blank=True, default='')
+        
     flattr_link = models.CharField(max_length=255, null=True, blank=True)
     homepage_url = models.CharField(max_length=1024, null=True, blank=True)
     

@@ -18,6 +18,7 @@ INSTALLED_APPS = (
     'django.contrib.admin',
     'django.contrib.contenttypes',
     'django.contrib.auth',
+    'django.contrib.sites',
     'django.contrib.sessions',
     'django.contrib.messages',
     'djangotoolbox',
@@ -61,3 +62,4 @@ ROOT_URLCONF = 'urls'
 AUTH_PROFILE_MODULE = "articles.UserProfile"
 
 UPLOADED_CONTENT_BASE_URL = "http://nehe.gamedev5.net"
+SITE_ID = 56003

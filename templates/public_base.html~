@@ -25,31 +25,27 @@
     {% endblock %}
 
     {% block extra-head %}{% endblock %}
-    <script type='text/javascript' src='http://partner.googleadservices.com/gampad/google_service.js'></script>
-    <script type='text/javascript'>
-    GS_googleAddAdSenseService("ca-pub-3167291168602081");    
-    {% if article.author.profile.adsense_code %}
-    GS_googleAddAdSenseService("{{article.author.profile.adsense_code}}");
-    {% endif %}
-    {% block adsense_include %}{% endblock %}    
-    GS_googleEnableAllServices();
-    </script>
-
-    <script type='text/javascript'>
-    GA_googleAddSlot("ca-pub-3167291168602081", "Leaderboard_NeHe");
-    {% if article.author.profile.adsense_code %}
-    GA_googleAddSlot("{{article.author.profile.adsense_code}}", "Skyscraper_NeHe");
-    {% else %}
-    GA_googleAddSlot("{% block adsense_code %}ca-pub-3167291168602081{% endblock %}", "Skyscraper_NeHe");
-    {% endif %}
     
-    </script>
-    <script type='text/javascript'>
-    GA_googleFetchAds();
-    </script>
+    {% block adsense %}
+        <script type='text/javascript' src='http://partner.googleadservices.com/gampad/google_service.js'></script>
+        <script type='text/javascript'>
+        GS_googleAddAdSenseService("ca-pub-3167291168602081");    
+        GS_googleEnableAllServices();
+        </script>
+
+        <script type='text/javascript'>
+        GA_googleAddSlot("ca-pub-3167291168602081", "Leaderboard_NeHe");
+        GA_googleAddSlot("ca-pub-3167291168602081", "Skyscraper_NeHe");
+        </script>
+        <script type='text/javascript'>
+        GA_googleFetchAds();
+        </script>
+    {% endblock %}
+    
   </head>
 
   <body>
+    {% block after_body %}{% endblock %}
     <table cellpadding="0" cellspacing="0" border="0" id="layout_table">
     <tr><td>
         <div id="header">
@@ -65,9 +61,12 @@
             {% block content %}
                 Main content
             {% endblock %}
+
             <div style="width:728px;padding:0px;margin:auto; margin-top: 10px;">
+            {% block adsense_horizontal %}
                 <script type='text/javascript'>GA_googleFillSlot("Leaderboard_NeHe");</script>
-            </div>              
+            {% endblock %}                           
+            </div>   
         </td>
         <td class="col2">
             {% block narrow_col_right %}
@@ -75,13 +74,16 @@
 			<script type='text/javascript'>
 			GA_googleFillSlot("Skyscraper_NeHe");
 			</script>
-			</div>            
-            {% endblock %}
+			
+            <a href="http://www.amazon.com/exec/obidos/ASIN/159863528X/ref=nosim/gamedev" onMouseOut="nd()" onMouseOver="overlib('A Totally Killer Book Written By The Staff At GameDev.', CAPTION, 'Featured Book');"><img src="/static/images/boglgp.jpg" border="0" hspace="3" vspace="3" alt="Featured Book"></a><br/>
+
+			</div>        			    
+            {% endblock %}            
         </td>
     </table>
     <div id="footer">
         <p>
-			© 1997-2011 <a href="http://www.gamedev.net">Gamedev.net</a>. All rights reserved.<br/>
+			© 1997-2012 <a href="http://www.gamedev.net">Gamedev.net</a>. All rights reserved.<br/>
 			NeHe TM and NeHe ProductionsTM are trademarks of GameDev.net, LLC<br/>
 			OpenGL® is a registered trademark of Silicon Graphics Inc.<br/>
 		</p>        

@@ -22,7 +22,7 @@ tinyMCE.init({
 	        skin_variant : "silver",
 	
 	        // Example content CSS (should be your site CSS)
-	        content_css : "/static/css/public_base.css",
+//	        content_css : "/static/css/public_base.css",
 	
 	        // Drop lists for link/image/media/template dialogs
 	        external_link_list_url : "js/link_list.js",

@@ -22,7 +22,7 @@
     },
     {
         "model" : "articles.ArticleType",
-        "pk" : 3,
+        "pk" : 4,
         "fields" : {
             "description" : "PAGE"
         }
@@ -93,6 +93,14 @@
             "block" : 2,
             "priority" : 99,
             "active" : true
+        }
+    },
+    {
+        "model" : "sites.models.Site",
+        "pk" : 56003,
+        "fields" : {
+            "domain" : "nehe.gamedev.net",
+            "name" : "NeHe"
         }
     }
 ]

@@ -29,4 +29,4 @@ tinyMCE.init({
 	        external_image_list_url : "js/image_list.js",
 	        media_external_list_url : "js/media_list.js",
 			relative_urls : false,	        
-	});
+});

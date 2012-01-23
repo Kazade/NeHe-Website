@@ -16,7 +16,6 @@ from .utils import generate_cache_key
 #Cache the response for an hour, the other
 #caching is a fail safe as cache_page doesn't like GET
 #params
-@cache_page(60*60)
 def homepage(request):
     try:
         page = int(request.GET.get('page', 0))
@@ -87,6 +86,7 @@ def view_article(request, article_id):
 #Cache the page for 24 hours
 @cache_page(60 * 60 * 24)
 def article_listing(request, kind, page):
+    logging.info("Processing article_listing page %s %s", str(kind), str(page))
     articles = Article.get_by_kind(kind).order_by('original_id')
     pages = Paginator(articles, 5)
     subs = {}

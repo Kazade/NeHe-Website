@@ -45,6 +45,7 @@
   </head>
 
   <body>
+    {% block after_body %}{% endblock %}
     <table cellpadding="0" cellspacing="0" border="0" id="layout_table">
     <tr><td>
         <div id="header">
@@ -60,23 +61,26 @@
             {% block content %}
                 Main content
             {% endblock %}
+
             <div style="width:728px;padding:0px;margin:auto; margin-top: 10px;">
+            {% block adsense_horizontal %}
                 <script type='text/javascript'>GA_googleFillSlot("Leaderboard_NeHe");</script>
-            </div>              
+            {% endblock %}                           
+            </div>   
         </td>
         <td class="col2">
             {% block narrow_col_right %}
 			<div style="text-align: center; padding:10px;">
 			<script type='text/javascript'>
 			GA_googleFillSlot("Skyscraper_NeHe");
-			</script>
-			</div>            
-            {% endblock %}
+			</script>		
+			</div>        			    
+            {% endblock %}            
         </td>
     </table>
     <div id="footer">
         <p>
-			© 1997-2011 <a href="http://www.gamedev.net">Gamedev.net</a>. All rights reserved.<br/>
+			© 1997-2012 <a href="http://www.gamedev.net">Gamedev.net</a>. All rights reserved.<br/>
 			NeHe TM and NeHe ProductionsTM are trademarks of GameDev.net, LLC<br/>
 			OpenGL® is a registered trademark of Silicon Graphics Inc.<br/>
 		</p>        

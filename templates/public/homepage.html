@@ -30,18 +30,39 @@
             </div>
             <div>
             	<p>
+            	    <div class="continue">
             		<strong><a href="/news/{{post.url_name}}/{{post.pk}}/">CONTINUE READING</a></strong>
+            		</div>
+            		<div class="comment_count">
+                		<!-- AddThis Button BEGIN -->
+                        <div class="addthis_toolbox addthis_default_style">
+                            <a class="addthis_button_facebook" addthis:url="http://nehe.gamedev.net{{post.get_absolute_url}}" addthis:title="{{post.title}}"></a>
+                            <a class="addthis_button_twitter" addthis:url="http://nehe.gamedev.net{{post.get_absolute_url}}" addthis:title="{{post.title}}"></a>
+                            <a class="addthis_button_google_plusone" addthis:url="http://nehe.gamedev.net{{post.get_absolute_url}}" addthis:title="{{post.title}}"></a>                        
+                        </div>
+                        <!-- AddThis Button END -->
+                		<a href="/news/{{post.url_name}}/{{post.pk}}/">
+                        <span class="livefyre-commentcount" data-lf-site-id="287475" data-lf-article-id="{{post.pk}}">0 Comments</span>
+                        </a>
+            		</div>
+            		<div class="clear"></div>
             	</p>
             </div>
         </div>        
     {% endfor %}
     <div>
-    	<div style="text-align: center; width: 150px; float: left;">{% if news_posts.has_previous %}<a href="?page={{news_posts.previous_page_number}}">Newer Posts</a>{%endif%}</div>
-    	<div style="text-align: center; width: 150px; float:right;">{% if news_posts.has_next %}<a href="?page={{news_posts.next_page_number}}">Older Posts</a>{%endif%}</div>
+    	<div style="text-align: left; width: 150px; float: left;">{% if news_posts.has_previous %}<a href="?page={{news_posts.previous_page_number}}">Newer Posts</a>{%endif%}</div>
+    	<div style="text-align: right; width: 150px; float:right;">{% if news_posts.has_next %}<a href="?page={{news_posts.next_page_number}}">Older Posts</a>{%endif%}</div>
     	<div style="clear:both;"></div>
     </div>
 </div>
 
+{% endblock %}
+
+{% block js %}
+    {{block.super}}
+    <script type="text/javascript" src="http://zor.livefyre.com/wjs/v1.0/javascripts/CommentCount.js"></script>
+    <script type="text/javascript" src="http://s7.addthis.com/js/250/addthis_widget.js#pubid=ra-4f1bd6c243eb4da4"></script>    
 {% endblock %}
 
 {% block narrow_col_right %}
@@ -67,5 +88,6 @@
 <script type='text/javascript'>
 GA_googleFillSlot("Skyscraper_NeHe");
 </script>
+    <a href="http://www.amazon.com/exec/obidos/ASIN/159863528X/ref=nosim/gamedev" onMouseOut="nd()" onMouseOver="overlib('A Totally Killer Book Written By The Staff At GameDev.', CAPTION, 'Featured Book');"><img style="margin-top: 20px;" src="/static/images/boglgp.jpg" border="0" hspace="3" vspace="3" alt="Featured Book"></a><br/>
 </div>
 {% endblock %}

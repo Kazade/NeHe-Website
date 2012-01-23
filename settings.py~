@@ -18,6 +18,7 @@ INSTALLED_APPS = (
     'django.contrib.admin',
     'django.contrib.contenttypes',
     'django.contrib.auth',
+    'django.contrib.sites',
     'django.contrib.sessions',
     'django.contrib.messages',
     'djangotoolbox',
@@ -36,19 +37,11 @@ MIDDLEWARE_CLASSES = (
     # This loads the index definitions, so it has to come first
     'autoload.middleware.AutoloadMiddleware',
 
-    'django.middleware.cache.UpdateCacheMiddleware',
     'django.middleware.common.CommonMiddleware',
-    'django.middleware.cache.FetchFromCacheMiddleware',    
-    
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware'
 )
-
-CACHE_MIDDLEWARE_ALIAS = 'nehe'
-CACHE_MIDDLEWARE_SECONDS = 60 * 10
-CACHE_MIDDLEWARE_KEY_PREFIX = ''
-CACHE_MIDDLEWARE_ANONYMOUS_ONLY = True
 
 TEMPLATE_CONTEXT_PROCESSORS = (
     'django.contrib.auth.context_processors.auth',

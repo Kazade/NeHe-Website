@@ -61,7 +61,7 @@ def homepage(request):
         cache.set(HOME_PAGE_CACHE_KEY, subs, 60 * 60 * 24)
 
     #FIXME: It will reduce CPU if we store the HTML instead of subs in the cache
-    return render_to_response("public/homepage.html", subs)
+    return render_to_response("public/homepage.html", subs, context_instance=RequestContext(request))
 
 #Cache the page for 24 hours
 def view_article(request, article_id):
@@ -86,6 +86,7 @@ def view_article(request, article_id):
 #Cache the page for 24 hours
 @cache_page(60 * 60 * 24)
 def article_listing(request, kind, page):
+    logging.info("Processing article_listing page %s %s", str(kind), str(page))
     articles = Article.get_by_kind(kind).order_by('original_id')
     pages = Paginator(articles, 5)
     subs = {}

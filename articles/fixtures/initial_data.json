@@ -94,5 +94,13 @@
             "priority" : 99,
             "active" : true
         }
+    },
+    {
+        "model" : "sites.Site",
+        "pk" : 56003,
+        "fields" : {
+            "domain" : "nehe.gamedev.net",
+            "name" : "NeHe"
+        }
     }
 ]

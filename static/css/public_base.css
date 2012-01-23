@@ -46,6 +46,7 @@ a {
 #news_container .news_box {
     margin-right: 10px;
     margin-bottom: 20px;
+    margin-top: 30px;
 }
 
 #news_container .news_box .title {
@@ -97,3 +98,54 @@ a {
     margin-left: 10px;
 }
 
+.article-header {
+    width: 400px;
+    float: left;
+}
+
+.social-media {
+    float: right;
+    width: 300px;
+    height: 30px;
+    margin-top: 20px;
+}
+
+.social-media div {
+    float: left;
+}
+
+.comment_section {
+    border-top: 1px solid #0C5892;
+    margin-top: 30px;
+    padding-left: 10px;
+    padding-right: 10px;
+}
+
+
+.clear {
+    clear:both;
+}
+
+.continue {
+    float: left;
+    width: 400px;
+}
+
+.comment_count {
+    float:right;
+    width:200px;
+    text-align:right;
+    padding-right: 5px;
+}
+
+.comment_count .addthis_toolbox {
+    float: left;
+}
+
+.lf_comment_date {
+    color: white;
+}
+
+.col1 {
+    padding-right: 20px;
+}
