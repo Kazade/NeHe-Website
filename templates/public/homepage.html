@@ -75,7 +75,7 @@
 				<li>None available</li>
 			{% endif %}
 			{% for article in group.get_articles %}
-			<li><a href="{{article.kind.description|lower}}/{{article.url_name}}/{{article.pk}}/">{{article.title}}</a></li>
+			<li><a href="{{article.get_absolute_url}}">{{article.title}}</a></li>
 			{% endfor %}
 			{% for link in group.get_links %}
 			<li>{{link|safe}}</li>
