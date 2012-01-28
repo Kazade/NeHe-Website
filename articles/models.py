@@ -2,7 +2,7 @@ import logging
 from django.db import models
 from django.contrib.auth.models import User
 from django.core.cache import cache
-
+from djangotoolbox.fields import ListField
 from google.appengine.api import memcache
 from django.conf import settings
 import string
@@ -70,6 +70,25 @@ class Link(models.Model):
 
 class FileUpload(models.Model):
     uploaded_file = models.FileField(upload_to='/upload')
+    
+class ArticleListing(models.Model):
+    title = models.CharField(max_length=255)
+    articles = ListField(models.PositiveIntegerField(), default=[], null=False)
+    
+    def __unicode__(self):
+        return self.title
+        
+    class Meta(object):
+        app_label = "articles"
+        
+    def get_absolute_url(self):
+        return "/listing/%s/%i/" % (self.url_name(), self.pk)
+        
+    def url_name(self):
+        s = self.title.lower()
+        exclude = set(string.punctuation)
+        s = ''.join(ch for ch in s if ch not in exclude)
+        return s.replace(" ", "_") 
     
 class Article(models.Model):
     kind = models.ForeignKey(ArticleType, null=True)
@@ -168,7 +187,7 @@ class UserProfile(models.Model):
     leaderboard_adsense_slot = models.CharField(max_length=255, null=False, blank=True, default='')
     flattr_user_id = models.CharField(max_length=255, null=False, blank=True, default='')
     
-    flattr_link = models.CharField(max_length=255, null=True, blank=True)
+    license_under_cc = models.BooleanField(default=False)
     homepage_url = models.CharField(max_length=1024, null=True, blank=True)
     
     user = models.ForeignKey(User, unique=True)

@@ -5,7 +5,7 @@ Created on 19 Jun 2011
 '''
 
 from django.contrib import admin
-from articles.models import MenuBlock, MenuGroup, Article, ArticleType, Link, UserProfile
+from articles.models import MenuBlock, MenuGroup, Article, ArticleListing, Link, UserProfile
 
 class ArticleAdmin(admin.ModelAdmin):
     class Media:
@@ -26,6 +26,6 @@ class ArticleAdmin(admin.ModelAdmin):
 admin.site.register(MenuBlock)
 admin.site.register(MenuGroup)
 admin.site.register(Article, ArticleAdmin)
-admin.site.register(ArticleType)
+admin.site.register(ArticleListing)
 admin.site.register(Link)
 admin.site.register(UserProfile)

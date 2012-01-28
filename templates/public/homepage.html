@@ -6,6 +6,17 @@
 <meta name="google-site-verification" content="zLpjthumtTXE3PiQDaKSFdLdkznFgVXj0PJyS-HjKag" />
 {% endblock %}
 
+{% block after_body %}
+<div id="fb-root"></div>
+<script>(function(d, s, id) {
+  var js, fjs = d.getElementsByTagName(s)[0];
+  if (d.getElementById(id)) return;
+  js = d.createElement(s); js.id = id;
+  js.src = "//connect.facebook.net/en_GB/all.js#xfbml=1";
+  fjs.parentNode.insertBefore(js, fjs);
+}(document, 'script', 'facebook-jssdk'));</script>
+{% endblock %}
+
 {% block content %}
 
 <div id="news_container">
@@ -21,7 +32,17 @@
         <div class="news_box">
             <div class="title">
                 <a href="/news/{{post.url_name}}/{{post.pk}}/">{{post.title|upper}}</a>
+         
             </div>
+    		<!-- AddThis Button BEGIN -->
+            <div class="addthis_toolbox addthis_default_style">
+                <a class="addthis_button_facebook" addthis:url="http://nehe.gamedev.net{{post.get_absolute_url}}" addthis:title="{{post.title}}"></a>
+                <a class="addthis_button_twitter" addthis:url="http://nehe.gamedev.net{{post.get_absolute_url}}" addthis:title="{{post.title}}"></a>
+<!--                            
++1 IS MEGA SLOW!
+<a class="addthis_button_google_plusone" addthis:url="http://nehe.gamedev.net{{post.get_absolute_url}}" addthis:title="{{post.title}}"></a>  -->
+            </div>
+            <!-- AddThis Button END -->   
             <div class="author">
                 by {% if post.author.profile.homepage_url %}<a href="{{post.author.profile.homepage_url}}">{{post.author}}</a>{% else %}{{post.author}}{% endif %}, posted at {{post.created_time}}
             </div>
@@ -34,13 +55,6 @@
             		<strong><a href="/news/{{post.url_name}}/{{post.pk}}/">CONTINUE READING</a></strong>
             		</div>
             		<div class="comment_count">
-                		<!-- AddThis Button BEGIN -->
-                        <div class="addthis_toolbox addthis_default_style">
-                            <a class="addthis_button_facebook" addthis:url="http://nehe.gamedev.net{{post.get_absolute_url}}" addthis:title="{{post.title}}"></a>
-                            <a class="addthis_button_twitter" addthis:url="http://nehe.gamedev.net{{post.get_absolute_url}}" addthis:title="{{post.title}}"></a>
-                            <a class="addthis_button_google_plusone" addthis:url="http://nehe.gamedev.net{{post.get_absolute_url}}" addthis:title="{{post.title}}"></a>                        
-                        </div>
-                        <!-- AddThis Button END -->
                 		<a href="/news/{{post.url_name}}/{{post.pk}}/">
                         <span class="livefyre-commentcount" data-lf-site-id="287475" data-lf-article-id="{{post.pk}}">0 Comments</span>
                         </a>
@@ -84,6 +98,7 @@
 	{% endfor %}
 </div>
 {% endfor %}
+<div style="padding-top: 10px;" class="fb-like-box" data-href="http://www.facebook.com/pages/NeHe/300582493323181" data-width="210" data-colorscheme="dark" data-show-faces="true" data-border-color="#0C5892" data-stream="false" data-header="false"></div>
 <div style="text-align: center; padding:10px;">
 <script type='text/javascript'>
 GA_googleFillSlot("Skyscraper_NeHe");

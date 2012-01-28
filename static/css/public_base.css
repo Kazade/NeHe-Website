@@ -149,3 +149,15 @@ a {
 .col1 {
     padding-right: 20px;
 }
+
+.news_box .title {
+    float: left;
+}
+.news_box .addthis_toolbox {
+    padding-top: 10px;
+    float: right;
+}
+.news_box .author {
+    clear: both;
+    padding-bottom: 5px;
+}

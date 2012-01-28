@@ -13,9 +13,7 @@ from django.views.decorators.cache import cache_page
 
 from .utils import generate_cache_key
 
-#Cache the response for an hour, the other
-#caching is a fail safe as cache_page doesn't like GET
-#params
+@cache_page(60)
 def homepage(request):
     try:
         page = int(request.GET.get('page', 0))
@@ -38,8 +36,8 @@ def homepage(request):
         #otherwise, hit the datastore :(        
         subs = {}    
             
-        page_start = page * 15
-        page_end = int(page_start + 15)
+        page_start = page * 10
+        page_end = int(page_start + 10)
         
         logging.info("Rebuilding the homepage cache")
         
@@ -58,12 +56,12 @@ def homepage(request):
         subs["menu_blocks"] = MenuBlock.objects.filter(active=True).order_by('active','-priority').all()
         
         #24 hours!
-        cache.set(HOME_PAGE_CACHE_KEY, subs, 60 * 60 * 24)
+        cache.set(HOME_PAGE_CACHE_KEY, subs, 60 * 60 * 24 * 7)
 
     #FIXME: It will reduce CPU if we store the HTML instead of subs in the cache
     return render_to_response("public/homepage.html", subs, context_instance=RequestContext(request))
 
-#Cache the page for 24 hours
+@cache_page(60)
 def view_article(request, article_id):
     cache_key = generate_cache_key(request)
     
@@ -79,9 +77,31 @@ def view_article(request, article_id):
         subs = {}
         subs["article"] = article
         subs["title"] = article.title
-        cache.set(cache_key, subs, 60 * 60 * 24)
+        cache.set(cache_key, subs, 60 * 60 * 24 * 7)
 
     return render_to_response("public/view_article.html", subs, context_instance=RequestContext(request))
+
+@cache_page(60)
+def view_listing(request, listing_id):
+    cache_key = generate_cache_key(request)
+    
+    subs = cache.get(cache_key)
+    if not subs:
+        logging.info("Caching with key %s", cache_key)
+        
+        listing = get_object_or_404(ArticleListing, pk=listing_id)
+            
+        subs = {
+            "articles" : []
+        }
+        
+        for article_id in listing.articles:
+            article = Article.objects.get(pk=article_id)
+            subs["articles"].append(article)
+
+        subs["title"] = listing.title
+        cache.set(cache_key, subs, 60 * 60 * 24 * 7)
+    return render_to_response("public/view_listing.html", subs, context_instance=RequestContext(request))
 
 #Cache the page for 24 hours
 @cache_page(60 * 60 * 24)

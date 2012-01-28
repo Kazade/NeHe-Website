@@ -80,10 +80,13 @@
     </table>
     <div id="footer">
         <p>
+            {% block copyright %}
 			© 1997-2012 <a href="http://www.gamedev.net">Gamedev.net</a>. All rights reserved.<br/>
-			NeHe TM and NeHe ProductionsTM are trademarks of GameDev.net, LLC<br/>
+			{% endblock %}
+			NeHe™ and NeHe Productions™ are trademarks of GameDev.net, LLC<br/>
 			OpenGL® is a registered trademark of Silicon Graphics Inc.<br/>
 		</p>        
+		<br/>
     </div>
 
     {% block js %}
