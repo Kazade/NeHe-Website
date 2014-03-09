@@ -161,3 +161,7 @@ a {
     clear: both;
     padding-bottom: 5px;
 }
+
+.news_box .body {
+    clear: both;
+}
