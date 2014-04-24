@@ -100,6 +100,7 @@ from google.appengine.api import datastore_errors
 from google.appengine.api import datastore_types
 from google.appengine.api import namespace_manager
 from google.appengine.api import users
+from google.appengine.datastore import datastore_rpc
 from google.appengine.datastore import datastore_query
 
 
@@ -146,6 +147,12 @@ WRITE_CAPABILITY = datastore.WRITE_CAPABILITY
 
 STRONG_CONSISTENCY = datastore.STRONG_CONSISTENCY
 EVENTUAL_CONSISTENCY = datastore.EVENTUAL_CONSISTENCY
+
+
+NESTED = datastore_rpc.TransactionOptions.NESTED
+MANDATORY = datastore_rpc.TransactionOptions.MANDATORY
+ALLOWED = datastore_rpc.TransactionOptions.ALLOWED
+INDEPENDENT = datastore_rpc.TransactionOptions.INDEPENDENT
 
 
 KEY_RANGE_EMPTY = "Empty"
@@ -242,6 +249,7 @@ _ALLOWED_PROPERTY_TYPES = set([
     datetime.date,
     datetime.time,
     Blob,
+    datastore_types.EmbeddedEntity,
     ByteString,
     Text,
     users.User,
@@ -354,8 +362,15 @@ def model_from_protobuf(pb, _entity_class=datastore.Entity):
     Model instance resulting from decoding the protocol buffer
   """
 
-  entity = _entity_class.FromPb(pb)
+  entity = _entity_class.FromPb(pb, default_kind=Expando.kind())
   return class_for_kind(entity.kind()).from_entity(entity)
+
+
+def model_is_projection(model_instance):
+  """Returns true if the given db.Model instance only contains a projection of
+  the full entity.
+  """
+  return model_instance._entity and model_instance._entity.is_projection()
 
 
 def _initialize_properties(model_class, name, bases, dct):
@@ -626,11 +641,7 @@ class Property(object):
         raise BadValueError('Property %s is required' % self.name)
     else:
       if self.choices:
-        match = False
-        for choice in self.choices:
-          if choice == value:
-            match = True
-        if not match:
+        if value not in self.choices:
           raise BadValueError('Property %s is %r; must be one of %r' %
                               (self.name, value, self.choices))
     if self.validator is not None:
@@ -690,6 +701,10 @@ class Property(object):
       appropriate for storing in the datastore, or AUTO_UPDATE_UNCHANGED.
     """
     return AUTO_UPDATE_UNCHANGED
+
+  def make_value_from_datastore_index_value(self, index_value):
+    value = datastore_types.RestoreFromIndexValue(index_value, self.data_type)
+    return self.make_value_from_datastore(value)
 
   def make_value_from_datastore(self, value):
     """Native representation of this property.
@@ -934,11 +949,21 @@ class Model(object):
     self._app = _app
     self.__namespace = namespace
 
+    is_projection = False
+
+    if isinstance(_from_entity, datastore.Entity) and _from_entity.is_saved():
+      self._entity = _from_entity
+      is_projection = _from_entity.is_projection()
+      del self._key_name
+      del self._key
+
 
 
     for prop in self.properties().values():
       if prop.name in kwds:
         value = kwds[prop.name]
+      elif is_projection:
+        continue
       else:
         value = prop.default_value()
       try:
@@ -951,13 +976,6 @@ class Model(object):
 
         if prop.name in kwds and not _from_entity:
           raise
-
-
-    if isinstance(_from_entity, datastore.Entity) and _from_entity.is_saved():
-      self._entity = _from_entity
-      del self._key_name
-      del self._key
-
 
   def key(self):
     """Unique key for this entity.
@@ -1048,9 +1066,8 @@ class Model(object):
     Raises:
       TransactionFailedError if the data could not be committed.
     """
-    config = datastore._GetConfigFromKwargs(kwargs)
     self._populate_internal_entity()
-    return datastore.Put(self._entity, config=config)
+    return datastore.Put(self._entity, **kwargs)
 
 
 
@@ -1101,8 +1118,7 @@ class Model(object):
     Raises:
       TransactionFailedError if the data could not be committed.
     """
-    config = datastore._GetConfigFromKwargs(kwargs)
-    datastore.Delete(self.key(), config=config)
+    datastore.Delete(self.key(), **kwargs)
 
 
     self._key = self.key()
@@ -1211,16 +1227,15 @@ class Model(object):
 
     Returns:
       If a single key was given: a Model instance associated with key
-      for provided class if it exists in the datastore, otherwise
-      None; if a list of keys was given: a list whose items are either
-      a Model instance or None.
+      for the provided class if it exists in the datastore, otherwise
+      None. If a list of keys was given: a list where list[i] is the
+      Model instance for keys[i], or None if no instance exists.
 
     Raises:
       KindError if any of the retreived objects are not instances of the
       type associated with call to 'get'.
     """
-    config = datastore._GetConfigFromKwargs(kwargs)
-    results = get(keys, config=config)
+    results = get(keys, **kwargs)
     if results is None:
       return None
 
@@ -1251,14 +1266,13 @@ class Model(object):
 
       raise BadArgumentError(str(e))
 
-    config = datastore._GetConfigFromKwargs(kwargs)
     key_names, multiple = datastore.NormalizeAndTypeCheck(key_names, basestring)
     keys = [datastore.Key.from_path(cls.kind(), name, parent=parent)
             for name in key_names]
     if multiple:
-      return get(keys, config=config)
+      return get(keys, **kwargs)
     else:
-      return get(keys[0], config=config)
+      return get(keys[0], **kwargs)
 
   @classmethod
   def get_by_id(cls, ids, parent=None, **kwargs):
@@ -1269,16 +1283,15 @@ class Model(object):
       parent: Parent of instances to get.  Can be a model or key.
       config: datastore_rpc.Configuration to use for this request.
     """
-    config = datastore._GetConfigFromKwargs(kwargs)
     if isinstance(parent, Model):
       parent = parent.key()
     ids, multiple = datastore.NormalizeAndTypeCheck(ids, (int, long))
     keys = [datastore.Key.from_path(cls.kind(), id, parent=parent)
             for id in ids]
     if multiple:
-      return get(keys, config=config)
+      return get(keys, **kwargs)
     else:
-      return get(keys[0], config=config)
+      return get(keys[0], **kwargs)
 
 
 
@@ -1389,11 +1402,17 @@ class Model(object):
     for prop in cls.properties().values():
       if prop.name in entity:
         try:
-          value = prop.make_value_from_datastore(entity[prop.name])
-          entity_values[prop.name] = value
+          value = entity[prop.name]
         except KeyError:
 
           entity_values[prop.name] = []
+        else:
+          if entity.is_projection():
+            value = prop.make_value_from_datastore_index_value(value)
+          else:
+            value = prop.make_value_from_datastore(value)
+          entity_values[prop.name] = value
+
 
     return entity_values
 
@@ -1470,7 +1489,6 @@ def get_async(keys, **kwargs):
   Identical to db.get() except returns an asynchronous object. Call
   get_result() on the return value to block on the call and get the results.
   """
-  config = datastore._GetConfigFromKwargs(kwargs)
   keys, multiple = datastore.NormalizeAndTypeCheckKeys(keys)
   def extra_hook(entities):
     if not multiple and not entities:
@@ -1490,7 +1508,7 @@ def get_async(keys, **kwargs):
     assert len(models) == 1
     return models[0]
 
-  return datastore.GetAsync(keys, config=config, extra_hook=extra_hook)
+  return datastore.GetAsync(keys, extra_hook=extra_hook, **kwargs)
 
 
 
@@ -1508,9 +1526,9 @@ def get(keys, **kwargs):
 
     Returns:
       If a single key was given: a Model instance associated with key
-      for if it exists in the datastore, otherwise None; if a list of
-      keys was given: a list whose items are either a Model instance or
-      None.
+      if it exists in the datastore, otherwise None. If a list of keys was
+      given: a list where list[i] is the Model instance for keys[i], or
+      None if no instance exists.
   """
   return get_async(keys, **kwargs).get_result()
 
@@ -1521,7 +1539,6 @@ def put_async(models, **kwargs):
   Identical to db.put() except returns an asynchronous object. Call
   get_result() on the return value to block on the call and get the results.
   """
-  config = datastore._GetConfigFromKwargs(kwargs)
   models, multiple = datastore.NormalizeAndTypeCheck(models, Model)
   entities = [model._populate_internal_entity() for model in models]
 
@@ -1531,7 +1548,7 @@ def put_async(models, **kwargs):
     assert len(keys) == 1
     return keys[0]
 
-  return datastore.PutAsync(entities, config=config, extra_hook=extra_hook)
+  return datastore.PutAsync(entities, extra_hook=extra_hook, **kwargs)
 
 
 def put(models, **kwargs):
@@ -1543,7 +1560,8 @@ def put(models, **kwargs):
       specified as a keyword argument.
 
   Returns:
-    A Key or a list of Keys (corresponding to the argument's plurality).
+    A Key if models is an instance, a list of Keys in the same order
+    as models if models is a list.
 
   Raises:
     TransactionFailedError if the data could not be committed.
@@ -1562,8 +1580,6 @@ def delete_async(models, **kwargs):
   Identical to db.delete() except returns an asynchronous object. Call
   get_result() on the return value to block on the call.
   """
-  config = datastore._GetConfigFromKwargs(kwargs)
-
 
   if isinstance(models, (basestring, Model, Key)):
     models = [models]
@@ -1574,7 +1590,7 @@ def delete_async(models, **kwargs):
       models = [models]
   keys = [_coerce_to_key(v) for v in models]
 
-  return datastore.DeleteAsync(keys, config=config)
+  return datastore.DeleteAsync(keys, **kwargs)
 
 
 def delete(models, **kwargs):
@@ -1689,19 +1705,23 @@ def allocate_id_range(model, start, end, **kwargs):
     return KEY_RANGE_EMPTY
 
 
+def _index_converter(index):
+  return Index(index.Id(),
+               index.Kind(),
+               index.HasAncestor(),
+               index.Properties())
+
+
 def get_indexes_async(**kwargs):
   """Asynchronously retrieves the application indexes and their states.
 
   Identical to get_indexes() except returns an asynchronous object. Call
   get_result() on the return value to block on the call and get the results.
   """
-  config = datastore._GetConfigFromKwargs(kwargs)
-
   def extra_hook(indexes):
-    return [(Index(index.Id(), index.Kind(), index.HasAncestor(),
-                  index.Properties()), state) for index, state in indexes]
+    return [(_index_converter(index), state) for index, state in indexes]
 
-  return datastore.GetIndexesAsync(config=config, extra_hook=extra_hook)
+  return datastore.GetIndexesAsync(extra_hook=extra_hook, **kwargs)
 
 
 def get_indexes(**kwargs):
@@ -1959,10 +1979,13 @@ class Expando(Model):
 
 class _BaseQuery(object):
   """Base class for both Query and GqlQuery."""
-  _compile = False
 
-  def __init__(self, model_class=None, keys_only=False, compile=True,
-               cursor=None, namespace=None):
+  _last_raw_query = None
+  _last_index_list = None
+  _cursor = None
+  _end_cursor = None
+
+  def __init__(self, model_class=None):
     """Constructor.
 
     Args:
@@ -1972,13 +1995,7 @@ class _BaseQuery(object):
       cursor: A compiled query from which to resume.
       namespace: The namespace to query.
     """
-
-
     self._model_class = model_class
-    self._keys_only = keys_only
-    self._compile = compile
-    self._namespace = namespace
-    self.with_cursor(cursor)
 
   def is_keys_only(self):
     """Returns whether this query is keys only.
@@ -1986,7 +2003,53 @@ class _BaseQuery(object):
     Returns:
       True if this query returns keys, False if it returns entities.
     """
-    return self._keys_only
+    raise NotImplementedError
+
+  def projection(self):
+    """Returns the tuple of properties in the projection or None.
+
+    Projected results differ from normal results in multiple ways:
+    - they only contain a portion of the original entity and cannot be put;
+    - properties defined on the model, but not included in the projections will
+      have a value of None, even if the property is required or has a default
+      value;
+    - multi-valued properties (such as a ListProperty) will only contain a single
+      value.
+    - dynamic properties not included in the projection will not appear
+      on the model instance.
+    - dynamic properties included in the projection are deserialized into
+      their indexed type. Specifically one of str, bool, long, float, GeoPt, Key
+      or User. If the original type is known, it can be restored using
+      datastore_types.RestoreFromIndexValue.
+
+    However, projection queries are significantly faster than normal queries.
+
+    Projection queries on entities with multi-valued properties will return the
+    same entity multiple times, once for each unique combination of values for
+    properties included in the order, an inequaly property, or the projected
+    properties.
+
+    Returns:
+      The list of properties in the projection, or None if no projection is
+      set on this query.
+    """
+    raise NotImplementedError
+
+  def is_distinct(self):
+    """Returns true if the projection query should be distinct.
+
+    This is equivalent to the SQL syntax: SELECT DISTINCT. It is only available
+    for projection queries, it is not valid to specify distinct without also
+    specifying projection properties.
+
+    Distinct projection queries on entities with multi-valued properties will
+    return the same entity multiple times, once for each unique combination of
+    properties included in the projection.
+
+    Returns:
+      True if this projection query is distinct.
+    """
+    raise NotImplementedError
 
   def _get_query(self):
     """Subclass must override (and not call their super method).
@@ -1999,23 +2062,25 @@ class _BaseQuery(object):
   def run(self, **kwargs):
     """Iterator for this query.
 
-    If you know the number of results you need, consider fetch() instead,
-    or use a GQL query with a LIMIT clause. It's more efficient.
+    If you know the number of results you need, use run(limit=...) instead,
+    or use a GQL query with a LIMIT clause. It's more efficient. If you want
+    all results use run(batch_size=<large number>).
 
     Args:
-      config: datastore_rpc.Configuration to use for this request.
+      kwargs: Any keyword arguments accepted by datastore_query.QueryOptions().
 
     Returns:
       Iterator for this query.
     """
-    config = datastore._GetConfigFromKwargs(kwargs)
     raw_query = self._get_query()
-    iterator = raw_query.Run(config=config)
+    iterator = raw_query.Run(**kwargs)
+    self._last_raw_query = raw_query
 
-    if self._compile:
-      self._last_raw_query = raw_query
+    keys_only = kwargs.get('keys_only')
+    if keys_only is None:
+      keys_only = self.is_keys_only()
 
-    if self._keys_only:
+    if keys_only:
       return iterator
     else:
       return _QueryIterator(self._model_class, iter(iterator))
@@ -2030,26 +2095,24 @@ class _BaseQuery(object):
 
   def __getstate__(self):
     state = self.__dict__.copy()
-    if '_last_raw_query' in state:
-      del state['_last_raw_query']
+    state['_last_raw_query'] = None
     return state
 
   def get(self, **kwargs):
     """Get first result from this.
 
-    Args:
-      config: datastore_rpc.Configuration to use for this request.
-
     Beware: get() ignores the LIMIT clause on GQL queries.
+
+    Args:
+      kwargs: Any keyword arguments accepted by datastore_query.QueryOptions().
 
     Returns:
       First result from running the query if there are any, else None.
     """
-    config = datastore._GetConfigFromKwargs(kwargs)
-    results = self.fetch(1, config=config)
+    results = self.run(limit=1, **kwargs)
     try:
-      return results[0]
-    except IndexError:
+      return results.next()
+    except StopIteration:
       return None
 
   def count(self, limit=1000, **kwargs):
@@ -2061,56 +2124,54 @@ class _BaseQuery(object):
       limit: A number. If there are more results than this, stop short and
         just return this number. Providing this argument makes the count
         operation more efficient.
-      config: datastore_rpc.Configuration to use for this request.
+      kwargs: Any keyword arguments accepted by datastore_query.QueryOptions().
 
     Returns:
       Number of entities this query fetches.
     """
-    config = datastore._GetConfigFromKwargs(kwargs)
     raw_query = self._get_query()
-    result = raw_query.Count(limit=limit, config=config)
-    if self._compile:
-      self._last_raw_query = raw_query
+    result = raw_query.Count(limit=limit, **kwargs)
+    self._last_raw_query = raw_query
+
     return result
 
   def fetch(self, limit, offset=0, **kwargs):
     """Return a list of items selected using SQL-like limit and offset.
 
-    Whenever possible, use fetch() instead of iterating over the query
-    results with run() or __iter__() . fetch() is more efficient.
+    Always use run(limit=...) instead of fetch() when iterating over a query.
 
-    Beware: fetch() ignores the LIMIT clause on GQL queries.
+    Beware: offset must read and discard all skipped entities. Use
+    cursor()/with_cursor() instead.
 
     Args:
       limit: Maximum number of results to return.
       offset: Optional number of results to skip first; default zero.
-      config: datastore_rpc.Configuration to use for this request.
+      kwargs: Any keyword arguments accepted by datastore_query.QueryOptions().
 
     Returns:
       A list of db.Model instances.  There may be fewer than 'limit'
       results if there aren't enough results to satisfy the request.
     """
-    config = datastore._GetConfigFromKwargs(kwargs)
+    if limit is None:
+      kwargs.setdefault('batch_size', datastore._MAX_INT_32)
+    return list(self.run(limit=limit, offset=offset, **kwargs))
 
-    accepted = (int, long)
-    if not (isinstance(limit, accepted) and isinstance(offset, accepted)):
-      raise TypeError('Arguments to fetch() must be integers')
-    if limit < 0 or offset < 0:
-      raise ValueError('Arguments to fetch() must be >= 0')
+  def index_list(self):
+    """Get the index list for an already executed query.
 
-    raw_query = self._get_query()
-    raw = raw_query.Get(limit, offset, config=config)
+    Returns:
+      A list of indexes used by the query.
 
-    if self._compile:
-      self._last_raw_query = raw_query
-
-    if self._keys_only:
-      return raw
-    else:
-      if self._model_class is not None:
-        return [self._model_class.from_entity(e) for e in raw]
-      else:
-        return [class_for_kind(e.kind()).from_entity(e) for e in raw]
+    Raises:
+      AssertionError: If the query has not been executed.
+    """
+    if self._last_raw_query is None:
+      raise AssertionError('No index list because query has not been run.')
+    if self._last_index_list is None:
+      raw_index_list = self._last_raw_query.GetIndexList()
+      self._last_index_list = [_index_converter(raw_index)
+                               for raw_index in raw_index_list]
+    return self._last_index_list
 
   def cursor(self):
     """Get a serialized cursor for an already executed query.
@@ -2121,15 +2182,14 @@ class _BaseQuery(object):
 
     Returns:
       A base64-encoded serialized cursor.
+
+    Raises:
+      AssertionError: If the query has not been executed.
     """
-    if not self._compile:
-      raise AssertionError(
-          'Query must be created with compile=True to produce cursors')
-    try:
-      return websafe_encode_cursor(
-          self._last_raw_query.GetCompiledCursor())
-    except AttributeError:
+    if self._last_raw_query is None:
       raise AssertionError('No cursor available.')
+    cursor = self._last_raw_query.GetCursor()
+    return websafe_encode_cursor(cursor)
 
   def with_cursor(self, start_cursor=None, end_cursor=None):
     """Set the start and end of this query using serialized cursors.
@@ -2265,8 +2325,17 @@ class _QueryIterator(object):
     if self.__model_class is not None:
       return self.__model_class.from_entity(self.__iterator.next())
     else:
-      entity = self.__iterator.next()
-      return class_for_kind(entity.kind()).from_entity(entity)
+      while True:
+        entity = self.__iterator.next()
+        try:
+          model_class = class_for_kind(entity.kind())
+        except KindError:
+
+          if datastore_types.RESERVED_PROPERTY_NAME.match(entity.kind()):
+            continue
+          raise
+        else:
+          return model_class.from_entity(entity)
 
 
 def _normalize_query_parameter(value):
@@ -2334,22 +2403,55 @@ class Query(_BaseQuery):
        print story.title
   """
 
+
+  _keys_only = False
+  _distinct = False
+  _projection = None
+  _namespace = None
+  _app = None
+  __ancestor = None
+
   def __init__(self, model_class=None, keys_only=False, cursor=None,
-               namespace=None, _app=None):
+               namespace=None, _app=None, distinct=False, projection=None):
     """Constructs a query over instances of the given Model.
 
     Args:
       model_class: Model class to build query for.
       keys_only: Whether the query should return full entities or only keys.
+      projection: A tuple of strings representing the property names to include
+        in the projection this query should produce or None. Setting a
+        projection is similar to specifying 'SELECT prop1, prop2, ...' in SQL.
+        See _BaseQuery.projection for details on projection queries.
+      distinct: A boolean, true if the projection should be distinct.
+        See _BaseQuery.is_distinct for details on distinct queries.
       cursor: A compiled query from which to resume.
       namespace: The namespace to use for this query.
     """
-    super(Query, self).__init__(model_class, keys_only, cursor=cursor,
-                                namespace=namespace)
+    super(Query, self).__init__(model_class)
+
+    if keys_only:
+      self._keys_only = True
+    if projection:
+      self._projection = projection
+    if namespace is not None:
+      self._namespace = namespace
+    if _app is not None:
+      self._app = _app
+    if distinct:
+      self._distinct = True
+
     self.__query_sets = [{}]
     self.__orderings = []
-    self.__ancestor = None
-    self._app = _app
+    self.with_cursor(cursor)
+
+  def is_keys_only(self):
+    return self._keys_only
+
+  def projection(self):
+    return self._projection
+
+  def is_distinct(self):
+    return self._distinct
 
   def _get_query(self,
                  _query_class=datastore.Query,
@@ -2369,7 +2471,9 @@ class Query(_BaseQuery):
       query = _query_class(kind,
                            query_set,
                            keys_only=self._keys_only,
-                           compile=self._compile,
+                           projection=self._projection,
+                           distinct=self._distinct,
+                           compile=True,
                            cursor=self._cursor,
                            end_cursor=self._end_cursor,
                            namespace=self._namespace,
@@ -2597,8 +2701,8 @@ class GqlQuery(_BaseQuery):
       model_class = class_for_kind(self._proto_query._kind)
     else:
       model_class = None
-    super(GqlQuery, self).__init__(model_class,
-                                   keys_only=self._proto_query._keys_only)
+
+    super(GqlQuery, self).__init__(model_class)
 
     if model_class is not None:
 
@@ -2608,6 +2712,15 @@ class GqlQuery(_BaseQuery):
           raise PropertyError('Property \'%s\' is not indexed' % property)
 
     self.bind(*args, **kwds)
+
+  def is_keys_only(self):
+    return self._proto_query._keys_only
+
+  def projection(self):
+    return self._proto_query.projection()
+
+  def is_distinct(self):
+    return self._proto_query.is_distinct()
 
   def bind(self, *args, **kwds):
     """Bind arguments (positional or keyword) to the query.
@@ -2638,26 +2751,15 @@ class GqlQuery(_BaseQuery):
     in batches by the iterator.
 
     Args:
-      config: datastore_rpc.Configuration to use for this request.
+      kwargs: Any keyword arguments accepted by datastore_query.QueryOptions().
 
     Returns:
       Iterator for this query.
     """
-    if self._proto_query.limit() >= 0:
-      return iter(self.fetch(limit=self._proto_query.limit(),
-                             offset=self._proto_query.offset(),
-                             **kwargs))
-    else:
-      results = _BaseQuery.run(self, **kwargs)
-
-      try:
-        for _ in xrange(self._proto_query.offset()):
-          results.next()
-      except StopIteration:
-        pass
-
-
-      return results
+    if self._proto_query.limit() > 0:
+      kwargs.setdefault('limit', self._proto_query.limit())
+    kwargs.setdefault('offset', self._proto_query.offset())
+    return _BaseQuery.run(self, **kwargs)
 
   def _get_query(self):
     return self._proto_query.Bind(self._args, self._kwds,
@@ -2743,8 +2845,13 @@ class StringProperty(Property):
           % (self.name, type(value).__name__))
     if not self.multiline and value and value.find('\n') != -1:
       raise BadValueError('Property %s is not multi-line' % self.name)
+    if value is not None and len(value) > self.MAX_LENGTH:
+      raise BadValueError(
+          'Property %s is %d characters long; it must be %d or less.'
+          % (self.name, len(value), self.MAX_LENGTH))
     return value
 
+  MAX_LENGTH = 500
   data_type = basestring
 
 
@@ -2859,8 +2966,13 @@ class ByteStringProperty(Property):
     if value is not None and not isinstance(value, ByteString):
       raise BadValueError('Property %s must be a ByteString instance'
                           % self.name)
+    if value is not None and len(value) > self.MAX_LENGTH:
+      raise BadValueError(
+          'Property %s is %d bytes long; it must be %d or less.'
+          % (self.name, len(value), self.MAX_LENGTH))
     return value
 
+  MAX_LENGTH = 500
   data_type = ByteString
 
 
@@ -2898,8 +3010,8 @@ class DateTimeProperty(Property):
     """
     value = super(DateTimeProperty, self).validate(value)
     if value and not isinstance(value, self.data_type):
-      raise BadValueError('Property %s must be a %s' %
-                          (self.name, self.data_type.__name__))
+      raise BadValueError('Property %s must be a %s, but was %r' %
+                          (self.name, self.data_type.__name__, value))
     return value
 
   def default_value(self):
@@ -2933,7 +3045,7 @@ class DateTimeProperty(Property):
     Returns:
       'now' as a whole timestamp, including both time and date.
     """
-    return datetime.datetime.now()
+    return datetime.datetime.utcnow()
 
 
 def _date_to_datetime(value):
@@ -2981,7 +3093,7 @@ class DateProperty(DateTimeProperty):
     Returns:
       'date' part of 'now' only.
     """
-    return datetime.datetime.now().date()
+    return datetime.datetime.utcnow().date()
 
   def validate(self, value):
     """Validate date.
@@ -3058,7 +3170,7 @@ class TimeProperty(DateTimeProperty):
     Returns:
       'time' part of 'now' only.
     """
-    return datetime.datetime.now().time()
+    return datetime.datetime.utcnow().time()
 
   def empty(self, value):
     """Is time property empty.
@@ -3353,6 +3465,12 @@ class ListProperty(Property):
       value = self.validate_list_contents(value)
     return value
 
+  def _load(self, model_instance, value):
+
+    if not isinstance(value, list):
+      value = [value]
+    return super(ListProperty, self)._load(model_instance, value)
+
   def validate_list_contents(self, value):
     """Validates that all items in the list are of the correct type.
 
@@ -3409,8 +3527,10 @@ class ListProperty(Property):
     Returns:
       validated list appropriate to save in the datastore.
     """
-    value = self.validate_list_contents(
-        super(ListProperty, self).get_value_for_datastore(model_instance))
+    value = super(ListProperty, self).get_value_for_datastore(model_instance)
+    if not value:
+      return value
+    value = self.validate_list_contents(value)
     if self.validator:
       self.validator(value)
 
@@ -3449,6 +3569,10 @@ class ListProperty(Property):
       value = map(lambda x: x.time(), value)
 
     return value
+
+  def make_value_from_datastore_index_value(self, index_value):
+    value = [datastore_types.RestoreFromIndexValue(index_value, self.item_type)]
+    return self.make_value_from_datastore(value)
 
 
 class StringListProperty(ListProperty):
@@ -3506,6 +3630,10 @@ class ReferenceProperty(Property):
       raise KindError('reference_class must be Model or _SELF_REFERENCE')
 
     self.reference_class = self.data_type = reference_class
+
+  def make_value_from_datastore_index_value(self, index_value):
+    value = datastore_types.RestoreFromIndexValue(index_value, Key)
+    return self.make_value_from_datastore(value)
 
   def __property_config__(self, model_class, property_name):
     """Loads all of the references that point to this model.
@@ -3641,7 +3769,7 @@ class ReferenceProperty(Property):
 
     if value is not None and not isinstance(value, self.reference_class):
       raise KindError('Property %s must be an instance of %s' %
-                            (self.name, self.reference_class.kind()))
+                      (self.name, self.reference_class.kind()))
 
     return value
 
@@ -3855,6 +3983,7 @@ is_in_transaction = datastore.IsInTransaction
 
 
 transactional = datastore.Transactional
+non_transactional = datastore.NonTransactional
 
 
 create_config = datastore.CreateConfig

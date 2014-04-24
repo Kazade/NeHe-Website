@@ -63,28 +63,40 @@ else:
 from google.appengine.api import apiproxy_stub_map
 from google.appengine.api import backends
 from google.appengine.api import datastore
-from google.appengine.api import datastore_admin
 from google.appengine.api import datastore_errors
 from google.appengine.api import datastore_types
 from google.appengine.api import memcache
+from google.appengine.api import search
 from google.appengine.api import taskqueue
 from google.appengine.api import users
 from google.appengine.api.taskqueue import taskqueue_service_pb
 from google.appengine.api.taskqueue import taskqueue_stub
+from google.appengine.datastore import datastore_stats_generator
 from google.appengine.ext import db
 from google.appengine.ext import webapp
-from google.appengine.ext.admin import datastore_stats_generator
 from google.appengine.ext.db import metadata
 from google.appengine.ext.webapp import _template
 from google.appengine.ext.webapp import util
+from google.appengine.runtime import apiproxy_errors
 
 
 _DEBUG = True
 
 
+QUEUE_MODE = taskqueue_service_pb.TaskQueueMode
+
+
 _UsecToSec = taskqueue_stub._UsecToSec
 _FormatEta = taskqueue_stub._FormatEta
 _EtaDelta = taskqueue_stub._EtaDelta
+
+_DATASTORE_CACHING_WARNING = (
+    'If your app uses memcache to cache entities (e.g. uses NDB), you may see '
+    'stale results unless you flush memcache.')
+
+
+
+DEFAULT_MAX_DATASTORE_VIEWER_COLUMNS = 100
 
 
 
@@ -135,6 +147,33 @@ def ustr(value):
     return str(value)
   except UnicodeError:
     return unicode(value).encode('UTF-8')
+
+
+def urepr(value):
+  """Like repr(), but UTF-8-encodes Unicode inside a list."""
+  if isinstance(value, list):
+    return '[' + ', '.join(map(urepr, value)) + ']'
+  if isinstance(value, unicode):
+    return ('u"' +
+            value.encode('utf-8').replace('\"', '\\"').replace('\\', '\\\\') +
+            '"')
+  return repr(value)
+
+
+def TruncateValue(value):
+  """Truncates potentially very long string to a fixed maximum length."""
+  value = ustr(value)
+  if len(value) > 32:
+    return value[:32] + '...'
+  return value
+
+
+class Document(object):
+  """Simple representation of document."""
+
+  def __init__(self, doc_id):
+    self.doc_id = doc_id
+    self.fields = {}
 
 
 class ImageHandler(webapp.RequestHandler):
@@ -195,6 +234,10 @@ class BaseRequestHandler(webapp.RequestHandler):
         'interactive_execute_path': base_path + InteractiveExecuteHandler.PATH,
         'memcache_path': base_path + MemcachePageHandler.PATH,
         'queues_path': base_path + QueuesPageHandler.PATH,
+        'search_path': base_path + SearchIndexesListHandler.PATH,
+        'search_index_path': base_path + SearchIndexHandler.PATH,
+        'search_document_path': base_path + SearchDocumentHandler.PATH,
+        'search_batch_delete_path': base_path + SearchBatchDeleteHandler.PATH,
         'tasks_path': base_path + TasksPageHandler.PATH,
         'xmpp_path': base_path + XMPPPageHandler.PATH,
         'inboundmail_path': base_path + InboundMailPageHandler.PATH,
@@ -203,6 +246,10 @@ class BaseRequestHandler(webapp.RequestHandler):
       }
     if HAVE_CRON:
       values['cron_path'] = base_path + CronPageHandler.PATH
+    if 'X-AppEngine-Datastore-Admin-Enabled' in self.request.headers:
+      values['datastore_admin_path'] = base_path + DatastoreAdminHandler.PATH
+
+    values['interactive_console'] = self.interactive_console_enabled()
 
     values.update(template_values)
     directory = os.path.dirname(__file__)
@@ -247,6 +294,10 @@ class BaseRequestHandler(webapp.RequestHandler):
       return False
     return not server_software.startswith('Development')
 
+  def interactive_console_enabled(self):
+    return 'True' == self.request.headers.get(
+        'X-AppEngine-Interactive-Console-Enabled', 'True')
+
 
 class DefaultPageHandler(BaseRequestHandler):
   """Redirects to the Datastore application by default."""
@@ -259,6 +310,14 @@ class DefaultPageHandler(BaseRequestHandler):
     else:
       base = self.request.path
     self.redirect(base + DatastoreQueryHandler.PATH)
+
+
+class DatastoreAdminHandler(BaseRequestHandler):
+  """Loads the Datastore Admin handler in an iframe."""
+  PATH = '/datastore_admin'
+
+  def get(self):
+    self.generate('datastore_admin_frame.html')
 
 
 class InteractivePageHandler(BaseRequestHandler):
@@ -280,25 +339,34 @@ class InteractiveExecuteHandler(BaseRequestHandler):
 
   @xsrf_required
   def post(self):
+    if self.interactive_console_enabled():
 
-    save_stdout = sys.stdout
-    results_io = cStringIO.StringIO()
-    try:
-      sys.stdout = results_io
-
-
-      code = self.request.get('code')
-      code = code.replace("\r\n", "\n")
-
+      save_stdout = sys.stdout
+      results_io = cStringIO.StringIO()
       try:
-        compiled_code = compile(code, '<string>', 'exec')
-        exec(compiled_code, globals())
-      except Exception, e:
-        traceback.print_exc(file=results_io)
-    finally:
-      sys.stdout = save_stdout
+        sys.stdout = results_io
 
-    results = results_io.getvalue()
+
+        code = self.request.get('code')
+        code = code.replace("\r\n", "\n")
+
+        try:
+          compiled_code = compile(code, '<string>', 'exec')
+          exec(compiled_code, globals())
+        except Exception, e:
+          traceback.print_exc(file=results_io)
+      finally:
+        sys.stdout = save_stdout
+
+      results = results_io.getvalue()
+    else:
+      results = """The interactive console has been disabled for security
+because the dev_appserver is listening on a non-default address.
+If you would like to re-enable the console, invoke dev_appserver
+with the --enable_console argument.
+
+See https://developers.google.com/appengine/docs/python/tools/devserver#The_Interactive_Console
+for more information."""
     self.generate('interactive-output.html', {'output': results})
 
 
@@ -309,7 +377,7 @@ class CronPageHandler(BaseRequestHandler):
   def get(self, now=None):
     """Shows template displaying the configured cron jobs."""
     if not now:
-      now = datetime.datetime.now()
+      now = datetime.datetime.utcnow()
     values = {'request': self.request}
     cron_info = _ParseCronYaml()
     values['cronjobs'] = []
@@ -333,7 +401,7 @@ class CronPageHandler(BaseRequestHandler):
         matches = schedule.GetMatches(now, 3)
         job['times'] = []
         for match in matches:
-          job['times'].append({'runtime': match.strftime("%Y-%m-%d %H:%M:%SZ"),
+          job['times'].append({'runtime': match.strftime('%Y-%m-%d %H:%M:%SZ'),
                                'difference': str(match - now)})
     self.generate('cron.html', values)
 
@@ -347,9 +415,9 @@ class XMPPPageHandler(BaseRequestHandler):
 
     xmpp_configured = True
     values = {
-      'xmpp_configured': xmpp_configured,
-      'request': self.request
-    }
+        'xmpp_configured': xmpp_configured,
+        'request': self.request
+        }
     self.generate('xmpp.html', values)
 
 
@@ -393,7 +461,7 @@ class TaskQueueHelper(object):
       now: The current time. A datetime.datetime object with a utc timezone.
 
     Returns:
-      A list of queue dicts corrosponding to the tasks for this application.
+      A list of queue dicts corresponding to the tasks for this application.
     """
     request = taskqueue_service_pb.TaskQueueFetchQueuesRequest()
     request.set_max_rows(1000)
@@ -405,6 +473,7 @@ class TaskQueueHelper(object):
     queues = []
     for queue_proto in response.queue_list():
       queue = {'name': queue_proto.queue_name(),
+               'mode': queue_proto.mode(),
                'rate': queue_proto.user_specified_rate(),
                'bucket_size': queue_proto.bucket_capacity()}
       queues.append(queue)
@@ -498,6 +567,27 @@ class TaskQueueHelper(object):
     self._make_sync_call('PurgeQueue', request)
 
 
+class QueueBatch(object):
+  """Collection of push queues or pull queues."""
+
+  def __init__(self, title, run_manually, rate_limited, contents):
+    self.title = title
+    self.run_manually = run_manually
+    self.rate_limited = rate_limited
+    self.contents = contents
+
+  def __eq__(self, other):
+    if type(self) is not type(other):
+      return NotImplemented
+    return (self.title == other.title and
+            self.run_manually == other.run_manually and
+            self.rate_limited == other.rate_limited and
+            self.contents == other.contents)
+
+  def __iter__(self):
+    return self.contents.__iter__()
+
+
 class QueuesPageHandler(BaseRequestHandler):
   """Shows information about configured (and default) task queues."""
   PATH = '/queues'
@@ -508,8 +598,30 @@ class QueuesPageHandler(BaseRequestHandler):
 
   def get(self):
     """Shows template displaying the configured task queues."""
+
+    def is_push_queue(queue):
+      return queue['mode'] == QUEUE_MODE.PUSH
+
+    def is_pull_queue(queue):
+      return queue['mode'] == QUEUE_MODE.PULL
+
     now = datetime.datetime.utcnow()
-    values = {'queues': self.helper.get_queues(now)}
+    values = {}
+    try:
+      queues = self.helper.get_queues(now)
+      push_queues = QueueBatch('Push Queues',
+                               True,
+                               True,
+                               filter(is_push_queue, queues))
+      pull_queues = QueueBatch('Pull Queues',
+                               False,
+                               False,
+                               filter(is_pull_queue, queues))
+      values['queueBatches'] = [push_queues, pull_queues]
+    except apiproxy_errors.ApplicationError:
+
+
+      logging.exception('Could not fetch list of queues.')
     self.generate('queues.html', values)
 
   @xsrf_required
@@ -564,12 +676,13 @@ class TasksPageHandler(BaseRequestHandler):
 
   def _generate_page_params(self, page_dict):
     """Generate the params for a page link."""
-    params = {
-        'queue': self.queue_name,
-        'start_eta': page_dict['start_eta'],
-        'start_name': page_dict['start_name'],
-        'per_page': self.per_page,
-        'page_no': page_dict['number']}
+    params = [
+        ('queue', self.queue_name),
+        ('start_eta', page_dict['start_eta']),
+        ('start_name', page_dict['start_name']),
+        ('per_page', self.per_page),
+        ('page_no', page_dict['number']),
+        ]
     return urllib.urlencode(params)
 
   def generate_page_dicts(self, start_tasks, end_tasks):
@@ -605,7 +718,7 @@ class TasksPageHandler(BaseRequestHandler):
 
     page_map[1] = {'start_name': '', 'start_eta': 0, 'number': 1}
 
-    pages = sorted(page_map.values(), key=lambda page: page['number'])
+    pages = sorted(sorted(page_map.values()), key=lambda page: page['number'])
 
     for page in pages:
       page['url'] = self._generate_page_params(page)
@@ -628,8 +741,14 @@ class TasksPageHandler(BaseRequestHandler):
     tasks_to_fetch = min(self.MAX_TASKS_TO_FETCH,
                          max(self.MIN_TASKS_TO_FETCH, self.per_page * 10))
 
-    tasks = self.helper.get_tasks(now, self.queue_name, self.start_eta,
-                                  self.start_name, tasks_to_fetch)
+    try:
+      tasks = self.helper.get_tasks(now, self.queue_name, self.start_eta,
+                                    self.start_name, tasks_to_fetch)
+    except apiproxy_errors.ApplicationError:
+
+
+      logging.exception('Could not fetch list of tasks.')
+      tasks = []
 
     if self.start_eta or self.start_name:
       if not tasks:
@@ -650,16 +769,24 @@ class TasksPageHandler(BaseRequestHandler):
       pages[-1]['has_gap'] = True
     tasks = tasks[:self.per_page]
 
+
+    def is_this_push_queue(queue):
+      return (queue['name'] == self.queue_name and
+              queue['mode'] == QUEUE_MODE.PUSH)
+
     values = {
-      'queue': self.queue_name,
-      'per_page': self.per_page,
-      'tasks': tasks,
-      'prev_page': self.prev_page,
-      'next_page': self.next_page,
-      'this_page': self.this_page,
-      'pages': pages,
-      'page_no': self.page_no,
+        'queue': self.queue_name,
+        'per_page': self.per_page,
+        'tasks': tasks,
+        'prev_page': self.prev_page,
+        'next_page': self.next_page,
+        'this_page': self.this_page,
+        'pages': pages,
+        'page_no': self.page_no,
     }
+    if any(filter(is_this_push_queue, self.helper.get_queues(now))):
+      values['is_push_queue'] = 'true'
+
     self.generate('tasks.html', values)
 
   @xsrf_required
@@ -1077,6 +1204,16 @@ class DatastoreRequestHandler(BaseRequestHandler):
           key_dict[key] = [value]
     return key_dict
 
+  def redirect_with_message(self, message):
+    """Redirect to the 'next' url with message added as the msg parameter."""
+    quoted_message = urllib.quote_plus(message)
+    redirect_url = self.request.get('next')
+    if '?' in redirect_url:
+      redirect_url += '&msg=%s' % quoted_message
+    else:
+      redirect_url += '?msg=%s' % quoted_message
+    self.redirect(redirect_url)
+
 
 class DatastoreQueryHandler(DatastoreRequestHandler):
   """Our main request handler that executes queries and lists entities.
@@ -1125,12 +1262,12 @@ class DatastoreQueryHandler(DatastoreRequestHandler):
 
 
 
-      ancestor_count = 1
-      if index.HasAncestor():
-        key = entity.key().parent()
-        while key != None:
-          ancestor_count = ancestor_count + 1
-          key = key.parent()
+    ancestor_count = 1
+    if index.HasAncestor():
+      key = entity.key().parent()
+      while key != None:
+        ancestor_count = ancestor_count + 1
+        key = key.parent()
     return composite_index_value_count * ancestor_count
 
   def _get_write_ops(self, entity):
@@ -1183,7 +1320,7 @@ class DatastoreQueryHandler(DatastoreRequestHandler):
 
 
     headers = []
-    for key in keys:
+    for key in keys[:DEFAULT_MAX_DATASTORE_VIEWER_COLUMNS]:
       sample_value = key_values[key][0]
       headers.append({
         'name': ustr(key),
@@ -1197,7 +1334,7 @@ class DatastoreQueryHandler(DatastoreRequestHandler):
     for entity in result_set:
       write_ops = self._get_write_ops(entity)
       attributes = []
-      for key in keys:
+      for key in keys[:DEFAULT_MAX_DATASTORE_VIEWER_COLUMNS]:
         if entity.has_key(key):
           raw_value = entity[key]
           data_type = DataType.get(raw_value)
@@ -1221,7 +1358,8 @@ class DatastoreQueryHandler(DatastoreRequestHandler):
         'write_ops' : write_ops,
         'shortened_key': str(entity.key())[:8] + '...',
         'attributes': attributes,
-        'edit_uri': edit_path + '?key=' + str(entity.key()) + '&kind=' + urllib.quote(ustr(self.request.get('kind'))) + '&next=' + urllib.quote(ustr(self.request.uri)),
+        'edit_uri': edit_path + '?key=' + str(entity.key()) + '&kind=' + urllib.quote(ustr(self.request.get('kind'))) + '&next=' + urllib.quote(ustr(self.filter_url(
+                        ['kind', 'order', 'order_type', 'namespace', 'num']))),
       })
 
 
@@ -1269,6 +1407,7 @@ class DatastoreQueryHandler(DatastoreRequestHandler):
         'start_base_url': self.filter_url(['kind', 'order', 'order_type',
                                            'namespace', 'num']),
         'order_base_url': self.filter_url(['kind', 'namespace', 'num']),
+        'property_overflow': len(keys) > DEFAULT_MAX_DATASTORE_VIEWER_COLUMNS,
     }
     if current_page > 1:
       values['prev_start'] = int((current_page - 2) * num)
@@ -1289,6 +1428,14 @@ class DatastoreBatchEditHandler(DatastoreRequestHandler):
   @xsrf_required
   def post(self):
     """Handle POST."""
+    if self.request.get('flush_memcache'):
+      if memcache.flush_all():
+        message = 'Cache flushed, all keys dropped.'
+      else:
+        message = 'Flushing the cache failed.  Please try again.'
+      self.redirect_with_message(message)
+      return
+
     kind = self.request.get('kind')
 
 
@@ -1307,11 +1454,9 @@ class DatastoreBatchEditHandler(DatastoreRequestHandler):
       for key in keys:
         datastore.Delete(datastore.Key(key))
         num_deleted = num_deleted + 1
-      message = '%d entit%s deleted.' % (
-        num_deleted, ('ies', 'y')[num_deleted == 1])
-      uri = self.request.get('next')
-      msg = urllib.quote_plus(message)
-      self.redirect('%s&msg=%s' % (uri, msg))
+      message = '%d entit%s deleted. %s' % (
+        num_deleted, ('ies', 'y')[num_deleted == 1], _DATASTORE_CACHING_WARNING)
+      self.redirect_with_message(message)
       return
 
 
@@ -1389,7 +1534,7 @@ class DatastoreEditHandler(DatastoreRequestHandler):
 
     fields = []
     key_values = self.get_key_values(sample_entities)
-    for key, sample_values in key_values.iteritems():
+    for key, sample_values in sorted(key_values.iteritems()):
       if entity and entity.has_key(key):
         data_type = DataType.get(entity[key])
       else:
@@ -1429,7 +1574,8 @@ class DatastoreEditHandler(DatastoreRequestHandler):
 
       if self.request.get('action') == 'Delete':
         datastore.Delete(datastore.Key(entity_key))
-        self.redirect(self.request.get('next'))
+        self.redirect_with_message(
+            'Entity deleted. %s' % _DATASTORE_CACHING_WARNING)
         return
       entity = datastore.Get(datastore.Key(entity_key))
     else:
@@ -1464,7 +1610,11 @@ class DatastoreEditHandler(DatastoreRequestHandler):
 
     datastore.Put(entity)
 
-    self.redirect(self.request.get('next'))
+    if entity_key:
+      self.redirect_with_message(
+          'Entity updated. %s' % _DATASTORE_CACHING_WARNING)
+    else:
+      self.redirect(self.request.get('next'))
 
 
 class DatastoreStatsHandler(BaseRequestHandler):
@@ -1493,12 +1643,185 @@ class DatastoreStatsHandler(BaseRequestHandler):
       msg = 'No processing requested'
 
     uri = self.request.path_url
-    self.redirect('%s?%s' % (uri, urllib.urlencode(dict(msg=msg, status=status))))
+    self.redirect('%s?%s' % (uri, urllib.urlencode(
+        [('msg', msg), ('status', status)])))
 
   def generate_stats(self, _app=None):
     """Generate datastore stats."""
     processor = datastore_stats_generator.DatastoreStatsProcessor(_app)
     return processor.Run().Report()
+
+
+class SearchIndexesListHandler(BaseRequestHandler):
+  """FTS main page with list on indexes."""
+
+  PATH = '/search'
+
+  def get(self):
+    """Displays list of FTS indexes."""
+    start = self.request.get_range('start', min_value=0, default=0)
+    limit = self.request.get_range('num', min_value=1, max_value=100,
+                                   default=10)
+    namespace = self.request.get('namespace', default_value=None)
+    resp = search.get_indexes(offset=start, limit=limit+1,
+                              namespace=namespace or '')
+    has_more = len(resp.results) > limit
+    indexes = resp.results[:limit]
+
+    current_page = start / limit + 1
+    values = {
+        'request': self.request,
+        'namespace': namespace,
+        'has_namespace': namespace is not None,
+        'current_page': current_page,
+        'next_start': -1,
+        'prev_start': -1,
+        'num': limit,
+        'start': start,
+        'start_base_url': self.filter_url(['num', 'namespace']),
+        'next': urllib.quote(ustr(self.request.uri)),
+        'indexes': indexes}
+    if current_page > 1:
+      values['prev_start'] = int((current_page - 2) * limit)
+      values['paging'] = True
+    if has_more:
+      values['next_start'] = int(current_page * limit)
+      values['paging'] = True
+
+    self.generate('search.html', values)
+
+
+class SearchIndexHandler(BaseRequestHandler):
+  """FTS index information."""
+
+  PATH = '/search_index'
+
+  def _ProcessSearchResponse(self, response):
+    """Format document list and produce corresponding hdf representation."""
+
+    documents = []
+    field_names = set()
+
+
+
+    for result in response.results:
+      doc = Document(result.doc_id)
+      for field in result.fields:
+        field_names.add(field.name)
+        doc.fields[field.name] = field
+      documents.append(doc)
+
+    field_names = sorted(field_names)
+    docs = []
+
+    for doc in documents:
+      doc_fields = []
+      for field_name in field_names:
+        if field_name in doc.fields:
+          value = TruncateValue(doc.fields[field_name].value)
+        else:
+          value = ''
+        doc_fields.append(value)
+      docs.append({
+          'doc_id': doc.doc_id,
+          'fields': doc_fields
+          })
+
+    return {
+        'documents': docs,
+        'field_names': field_names,
+        }
+
+  def get(self):
+    """Displays documents in a FTS index."""
+    start = self.request.get_range('start', min_value=0, default=0)
+    query = self.request.get('query')
+    namespace = self.request.get('namespace')
+    limit = self.request.get_range('num', min_value=1, max_value=100,
+                                   default=10)
+    index_name = self.request.get('index') or 'index'
+    index = search.Index(name=index_name, namespace=namespace)
+    resp = index.search(query=search.Query(
+        query_string=query,
+        options=search.QueryOptions(offset=start, limit=limit)))
+    has_more = resp.number_found > start + limit
+
+    current_page = start / limit + 1
+    values = {
+        'request': self.request,
+        'namespace': namespace,
+        'index': index_name,
+        'query': query,
+        'current_page': current_page,
+        'next_start': -1,
+        'prev_start': -1,
+        'start_base_url': self.filter_url([
+            'query', 'index', 'num', 'namespace']),
+        'next': urllib.quote(ustr(self.request.uri)),
+        'values': self._ProcessSearchResponse(resp),
+        'prev': self.request.get(
+            'next',
+            default_value=self.base_path() + SearchIndexesListHandler.PATH)}
+    if current_page > 1:
+      values['prev_start'] = int((current_page - 2) * limit)
+      values['paging'] = True
+    if has_more:
+      values['next_start'] = int(current_page * limit)
+      values['paging'] = True
+
+    self.generate('search_index.html', values)
+
+
+class SearchDocumentHandler(BaseRequestHandler):
+  """FTS document information."""
+
+  PATH = '/search_document'
+
+  def get(self):
+    """Displays FTS document."""
+    index_name = self.request.get('index')
+    doc_id = self.request.get('id')
+    namespace = self.request.get('namespace')
+    doc = None
+    index = search.Index(name=index_name, namespace=namespace)
+    resp = index.get_range(start_id=doc_id, limit=1)
+    if resp.results and resp.results[0].doc_id == doc_id:
+      doc = resp.results[0]
+
+    values = {
+        'request': self.request,
+        'namespace': namespace,
+        'index': index_name,
+        'doc_id': doc_id,
+        'doc': doc,
+        'prev': self.request.get(
+            'next', default_value=self.base_path() + SearchIndexHandler.PATH +
+            '?index=' + index_name)}
+    self.generate('search_document.html', values)
+
+
+class SearchBatchDeleteHandler(BaseRequestHandler):
+  """FTS batch delete handler."""
+
+  PATH = '/search_batch_delete'
+
+  @xsrf_required
+  def post(self):
+    """Handle POST."""
+    index_name = self.request.get('index')
+    namespace = self.request.get('namespace')
+
+    docs = []
+    index = 0
+    num_docs = int(self.request.get('numdocs'))
+    for i in xrange(1, num_docs+1):
+      key = self.request.get('doc%d' % i)
+      if key:
+        docs.append(key)
+
+    index = search.Index(name=index_name, namespace=namespace)
+    index.delete(docs)
+    self.redirect(self.request.get('next'))
 
 
 
@@ -1532,10 +1855,7 @@ class DataType(object):
     return self.format(value)
 
   def input_field(self, name, value, sample_values):
-    if value is not None:
-      string_value = self.format(value)
-    else:
-      string_value = ''
+    string_value = self.format(value) if value else ''
     return '<input class="%s" name="%s" type="text" size="%d" value="%s"/>' % (cgi.escape(ustr(self.name())), cgi.escape(ustr(name)),
             self.input_field_size(),
             cgi.escape(string_value, True))
@@ -1554,11 +1874,11 @@ class StringType(DataType):
 
   def input_field(self, name, value, sample_values):
     name = ustr(name)
-    value = ustr(value)
-    sample_values = [ustr(s) for s in sample_values]
+    string_value = self.format(value) if value else ''
+    sample_values = [self.format(s) for s in sample_values]
     multiline = False
     if value:
-      multiline = len(value) > 255 or value.find('\n') >= 0
+      multiline = len(string_value) > 255 or string_value.find('\n') >= 0
     if not multiline:
       for sample_value in sample_values:
         if sample_value and (len(sample_value) > 255 or
@@ -1566,9 +1886,7 @@ class StringType(DataType):
           multiline = True
           break
     if multiline:
-      if not value:
-        value = ''
-      return '<textarea name="%s" rows="5" cols="50">%s</textarea>' % (cgi.escape(name), cgi.escape(value))
+      return '<textarea name="%s" rows="5" cols="50">%s</textarea>' % (cgi.escape(name), cgi.escape(string_value))
     else:
       return DataType.input_field(self, name, value, sample_values)
 
@@ -1590,13 +1908,35 @@ class TextType(StringType):
     return 'Text'
 
   def input_field(self, name, value, sample_values):
-    return '<textarea name="%s" rows="5" cols="50">%s</textarea>' % (cgi.escape(ustr(name)), cgi.escape(ustr(value)))
+    string_value = self.format(value) if value else ''
+    return '<textarea name="%s" rows="5" cols="50">%s</textarea>' % (cgi.escape(ustr(name)), cgi.escape(string_value))
 
   def parse(self, value):
     return datastore_types.Text(value)
 
   def python_type(self):
     return datastore_types.Text
+
+
+class ByteStringType(StringType):
+  def format(self, value):
+
+    if value is None:
+      return 'None'
+    r = value.encode('string-escape')
+    return r
+
+  def name(self):
+    return 'ByteString'
+
+  def parse(self, value):
+
+
+    bytestring = value.encode('ascii').decode('string-escape')
+    return datastore_types.ByteString(bytestring)
+
+  def python_type(self):
+    return datastore_types.ByteString
 
 
 class BlobType(StringType):
@@ -1613,11 +1953,19 @@ class BlobType(StringType):
     return datastore_types.Blob
 
 
+class EmbeddedEntityType(BlobType):
+  def name(self):
+    return 'entity:proto'
+
+  def python_type(self):
+    return datastore_types.EmbeddedEntity
+
+
 class TimeType(DataType):
   _FORMAT = '%Y-%m-%d %H:%M:%S'
 
   def format(self, value):
-    return value.strftime(TimeType._FORMAT)
+    return value.isoformat(' ')[0:19]
 
   def name(self):
     return 'datetime'
@@ -1632,20 +1980,36 @@ class TimeType(DataType):
 
 class ListType(DataType):
   def format(self, value):
-    return repr(value)
+    return urepr(value)
 
-  def short_format(self, value):
+  def short_format_orig(self, value):
     format = self.format(value)
     if len(format) > 20:
       return format[:20] + '...'
     else:
       return format
 
+  def utf8_short_format(self, value):
+    format = self.format(value).decode('utf-8')
+    if len(format) > 20:
+      return format[:20].encode('utf-8') + '...'
+    else:
+      return format.encode('utf-8')
+
+  def short_format(self, value):
+
+
+    try:
+      return self.utf8_short_format(value)
+    except Exception:
+      return self.short_format_orig(value)
+
   def name(self):
     return 'list'
 
   def input_field(self, name, value, sample_values):
-    return cgi.escape(self.format(value))
+    string_value = self.format(value) if value else ''
+    return cgi.escape(string_value)
 
   def python_type(self):
     return list
@@ -1743,10 +2107,7 @@ class ReferenceType(DataType):
     return datastore_types.Key
 
   def input_field(self, name, value, sample_values):
-    if value is not None:
-      string_value = self.format(value)
-    else:
-      string_value = ''
+    string_value = self.format(value) if value else ''
     html = '<input class="%s" name="%s" type="text" size="%d" value="%s"/>' % (cgi.escape(self.name()), cgi.escape(name), self.input_field_size(),
             cgi.escape(string_value, True))
     if value:
@@ -1885,6 +2246,7 @@ _DATA_TYPES = {
   types.UnicodeType: StringType(),
   datastore_types.Text: TextType(),
   datastore_types.Blob: BlobType(),
+  datastore_types.EmbeddedEntity: EmbeddedEntityType(),
   types.BooleanType: BoolType(),
   types.IntType: IntType(),
   types.LongType: LongType(),
@@ -1902,12 +2264,12 @@ _DATA_TYPES = {
   datastore_types.PostalAddress: PostalAddressType(),
   datastore_types.Rating: RatingType(),
   datastore_types.BlobKey: BlobKeyType(),
-  datastore_types.ByteString: StringType(),
+  datastore_types.ByteString: ByteStringType(),
 }
 
 _NAMED_DATA_TYPES = {}
-for data_type in _DATA_TYPES.values():
-  _NAMED_DATA_TYPES[data_type.name()] = data_type
+for _data_type in _DATA_TYPES.values():
+  _NAMED_DATA_TYPES[_data_type.name()] = _data_type
 
 
 def _ParseCronYaml():
@@ -1963,11 +2325,16 @@ handlers = [
     ('.*' + DatastoreEditHandler.PATH, DatastoreEditHandler),
     ('.*' + DatastoreBatchEditHandler.PATH, DatastoreBatchEditHandler),
     ('.*' + DatastoreStatsHandler.PATH, DatastoreStatsHandler),
+    ('.*' + DatastoreAdminHandler.PATH, DatastoreAdminHandler),
     ('.*' + InteractivePageHandler.PATH, InteractivePageHandler),
     ('.*' + InteractiveExecuteHandler.PATH, InteractiveExecuteHandler),
     ('.*' + MemcachePageHandler.PATH, MemcachePageHandler),
     ('.*' + ImageHandler.PATH, ImageHandler),
     ('.*' + QueuesPageHandler.PATH, QueuesPageHandler),
+    ('.*' + SearchIndexesListHandler.PATH, SearchIndexesListHandler),
+    ('.*' + SearchIndexHandler.PATH, SearchIndexHandler),
+    ('.*' + SearchDocumentHandler.PATH, SearchDocumentHandler),
+    ('.*' + SearchBatchDeleteHandler.PATH, SearchBatchDeleteHandler),
     ('.*' + TasksPageHandler.PATH, TasksPageHandler),
     ('.*' + XMPPPageHandler.PATH, XMPPPageHandler),
     ('.*' + InboundMailPageHandler.PATH, InboundMailPageHandler),

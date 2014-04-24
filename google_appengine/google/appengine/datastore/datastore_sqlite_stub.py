@@ -104,6 +104,10 @@ CREATE TABLE IF NOT EXISTS Namespaces (
 CREATE TABLE IF NOT EXISTS IdSeq (
   prefix TEXT NOT NULL PRIMARY KEY,
   next_id INT NOT NULL);
+
+CREATE TABLE IF NOT EXISTS ScatteredIdCounters (
+  prefix TEXT NOT NULL PRIMARY KEY,
+  next_id INT NOT NULL);
 """
 
 _NAMESPACE_SCHEMA = """
@@ -135,7 +139,68 @@ INSERT OR IGNORE INTO Apps (app_id) VALUES ('%(app_id)s');
 INSERT INTO Namespaces (app_id, name_space)
   VALUES ('%(app_id)s', '%(name_space)s');
 INSERT OR IGNORE INTO IdSeq VALUES ('%(prefix)s', 1);
+INSERT OR IGNORE INTO ScatteredIdCounters VALUES ('%(prefix)s', 1);
 """
+
+
+class SQLiteCursorWrapper(sqlite3.Cursor):
+  """Substitutes sqlite3.Cursor, with a cursor that logs commands.
+
+  Inherits from sqlite3.Cursor class and extends methods such as execute,
+  executemany and execute script, so it logs SQL calls.
+  """
+
+
+  def execute(self, sql, *args):
+    """Replaces execute() with a logging variant."""
+    if args:
+      parameters = []
+      for arg in args:
+        if isinstance(arg, buffer):
+          parameters.append('<blob>')
+        else:
+          parameters.append(repr(arg))
+      logging.debug('SQL Execute: %s - \n %s', sql,
+                    '\n '.join(str(param) for param in parameters))
+    else:
+      logging.debug(sql)
+    return super(SQLiteCursorWrapper, self).execute(sql, *args)
+
+  def executemany(self, sql, seq_parameters):
+    """Replaces executemany() with a logging variant."""
+    seq_parameters_list = list(seq_parameters)
+    logging.debug('SQL ExecuteMany: %s - \n %s', sql,
+                  '\n '.join(str(param) for param in seq_parameters_list))
+    return super(SQLiteCursorWrapper, self).executemany(sql,
+                                                        seq_parameters_list)
+
+
+  def executescript(self, sql):
+    """Replaces executescript() with a logging variant."""
+    logging.debug('SQL ExecuteScript: %s', sql)
+    return super(SQLiteCursorWrapper, self).executescript(sql)
+
+
+class SQLiteConnectionWrapper(sqlite3.Connection):
+  """Substitutes sqlite3.Connection with a connection that logs commands.
+
+  Inherits from sqlite3.Connection class and overrides cursor
+  replacing the default cursor with an instance of SQLiteCursorWrapper. This
+  automatically makes execute, executemany, executescript and others use the
+  SQLiteCursorWrapper.
+  """
+
+
+  def cursor(self):
+    """Substitutes standard cursor() with a SQLiteCursorWrapper to log queries.
+
+    Substitutes the standard sqlite.Cursor with SQLiteCursorWrapper to ensure
+    all cursor requests get intercepted.
+
+    Returns:
+      A SQLiteCursorWrapper Instance.
+    """
+    return super(SQLiteConnectionWrapper, self).cursor(SQLiteCursorWrapper)
 
 
 def ReferencePropertyToReference(refprop):
@@ -148,22 +213,61 @@ def ReferencePropertyToReference(refprop):
   return ref
 
 
-class _DedupingEntityIterator(object):
-  def __init__(self, cursor):
-    self.__cursor = cursor
-    self.__seen = set()
+def _DedupingEntityGenerator(cursor):
+  """Generator that removes duplicate entities from the results.
 
-  def __iter__(self):
-    return self
+  Generate datastore entities from a cursor, skipping the duplicates
 
-  def next(self):
-    row = self.__cursor.next()
-    while str(row[0]) in self.__seen:
-      row = self.__cursor.next()
-    self.__seen.add(str(row[0]))
-    entity = entity_pb.EntityProto(row[1])
+  Args:
+    cursor: a SQLite3.Cursor or subclass.
+
+  Yields:
+    Entities that do not share a key.
+  """
+  seen = set()
+  for row in cursor:
+    row_key, row_entity = row[:2]
+    encoded_row_key = str(row_key)
+    if encoded_row_key in seen:
+      continue
+
+    seen.add(encoded_row_key)
+    entity = entity_pb.EntityProto(row_entity)
     datastore_stub_util.PrepareSpecialPropertiesForLoad(entity)
-    return entity
+    yield entity
+
+
+def _ProjectionPartialEntityGenerator(cursor):
+  """Generator that creates partial entities for projection.
+
+  Generate partial datastore entities from a cursor, holding only the values
+  being projected. These entities might share a key.
+
+  Args:
+    cursor: a SQLite3.Cursor or subclass.
+
+  Yields:
+    Partial entities resulting from the projection.
+  """
+  for row in cursor:
+    entity_original = entity_pb.EntityProto(row[1])
+    entity = entity_pb.EntityProto()
+    entity.mutable_key().MergeFrom(entity_original.key())
+    entity.mutable_entity_group().MergeFrom(entity_original.entity_group())
+
+    for name, value_data in zip(row[2::2], row[3::2]):
+      prop_to_add = entity.add_property()
+      prop_to_add.set_name(ToUtf8(name))
+
+
+      value_decoder = sortable_pb_encoder.Decoder(
+          array.array('B', str(value_data)))
+      prop_to_add.mutable_value().Merge(value_decoder)
+      prop_to_add.set_multiple(False)
+
+    datastore_stub_util.PrepareSpecialPropertiesForLoad(entity)
+    yield entity
+
 
 def MakeEntityForQuery(query, *path):
   """Make an entity to be returned by a pseudo-kind query.
@@ -212,17 +316,6 @@ class KindPseudoKind(object):
   """
   name = '__kind__'
 
-  def __init__(self, sqlitestub):
-    """Constructor.
-
-    Initializes a __kind__ pseudo-kind definition.
-
-    Args:
-      sqlitestub: the DatastoreSqliteStub instance being served by this
-          pseudo-kind.
-    """
-    self.sqlitestub = sqlitestub
-
   def Query(self, query, filters, orders):
     """Perform a query on this pseudo-kind.
 
@@ -236,10 +329,10 @@ class KindPseudoKind(object):
       is invalid.
     """
     kind_range = datastore_stub_util.ParseKindQuery(query, filters, orders)
-    conn = self.sqlitestub._GetConnection()
+    conn = self._stub._GetConnection()
     cursor = None
     try:
-      prefix = self.sqlitestub._GetTablePrefix(query)
+      prefix = self._stub._GetTablePrefix(query)
       filters = []
 
       def AddExtremeFilter(extreme, inclusive, is_end):
@@ -258,7 +351,7 @@ class KindPseudoKind(object):
       kind_range.MapExtremes(AddExtremeFilter)
 
       params = []
-      sql_filters = self.sqlitestub._CreateFilterString(filters, params)
+      sql_filters = self._stub._CreateFilterString(filters, params)
 
       sql_stmt = ('SELECT kind FROM "%s!Entities" %s GROUP BY kind'
                   % (prefix, sql_filters))
@@ -268,9 +361,9 @@ class KindPseudoKind(object):
       for row in c.fetchall():
         kinds.append(MakeEntityForQuery(query, self.name, ToUtf8(row[0])))
 
-      cursor = datastore_stub_util._ExecuteQuery(kinds, query, [], [])
+      cursor = datastore_stub_util._ExecuteQuery(kinds, query, [], [], [])
     finally:
-      self.sqlitestub._ReleaseConnection(conn)
+      self._stub._ReleaseConnection(conn)
 
     return cursor
 
@@ -284,17 +377,6 @@ class PropertyPseudoKind(object):
     name: the pseudo-kind name
   """
   name = '__property__'
-
-  def __init__(self, sqlitestub):
-    """Constructor.
-
-    Initializes a __property__ pseudo-kind definition.
-
-    Args:
-      sqlitestub: the DatastoreSqliteStub instance being served by this
-          pseudo-kind.
-    """
-    self.sqlitestub = sqlitestub
 
   def Query(self, query, filters, orders):
     """Perform a query on this pseudo-kind.
@@ -311,10 +393,10 @@ class PropertyPseudoKind(object):
     property_range = datastore_stub_util.ParsePropertyQuery(query, filters,
                                                             orders)
     keys_only = query.keys_only()
-    conn = self.sqlitestub._GetConnection()
+    conn = self._stub._GetConnection()
     cursor = None
     try:
-      prefix = self.sqlitestub._GetTablePrefix(query)
+      prefix = self._stub._GetTablePrefix(query)
       filters = []
 
 
@@ -336,7 +418,7 @@ class PropertyPseudoKind(object):
         filters.append(('name', '!=', name))
 
       params = []
-      sql_filters = self.sqlitestub._CreateFilterString(filters, params)
+      sql_filters = self._stub._CreateFilterString(filters, params)
       if not keys_only:
 
 
@@ -382,16 +464,16 @@ class PropertyPseudoKind(object):
 
 
           representation_pb = property_pb.add_property()
-          representation_pb.set_name(u'property_representation')
+          representation_pb.set_name('property_representation')
           representation_pb.set_multiple(True)
           representation_pb.mutable_value().set_stringvalue(tag_name)
 
       if property_pb:
         properties.append(property_pb)
 
-      cursor = datastore_stub_util._ExecuteQuery(properties, query, [], [])
+      cursor = datastore_stub_util._ExecuteQuery(properties, query, [], [], [])
     finally:
-      self.sqlitestub._ReleaseConnection(conn)
+      self._stub._ReleaseConnection(conn)
 
     return cursor
 
@@ -405,17 +487,6 @@ class NamespacePseudoKind(object):
     name: the pseudo-kind name
   """
   name = '__namespace__'
-
-  def __init__(self, sqlitestub):
-    """Constructor.
-
-    Initializes a __namespace__ pseudo-kind definition.
-
-    Args:
-      sqlitestub: the DatastoreSqliteStub instance being served by this
-          pseudo-kind.
-    """
-    self.sqlitestub = sqlitestub
 
   def Query(self, query, filters, orders):
     """Perform a query on this pseudo-kind.
@@ -437,7 +508,7 @@ class NamespacePseudoKind(object):
 
 
 
-    namespaces = self.sqlitestub._DatastoreSqliteStub__namespaces
+    namespaces = self._stub._DatastoreSqliteStub__namespaces
     for app_id, namespace in sorted(namespaces):
       if app_id == app_str and namespace_range.Contains(namespace):
         if namespace:
@@ -446,8 +517,8 @@ class NamespacePseudoKind(object):
           ns_id = datastore_types._EMPTY_NAMESPACE_ID
         namespace_entities.append(MakeEntityForQuery(query, self.name, ns_id))
 
-    return datastore_stub_util._ExecuteQuery(namespace_entities, query, [], [])
-
+    return datastore_stub_util._ExecuteQuery(namespace_entities, query,
+                                             [], [], [])
 
 class DatastoreSqliteStub(datastore_stub_util.BaseDatastore,
                           apiproxy_stub.APIProxyStub,
@@ -474,7 +545,10 @@ class DatastoreSqliteStub(datastore_stub_util.BaseDatastore,
                verbose=False,
                service_name='datastore_v3',
                trusted=False,
-               consistency_policy=None):
+               consistency_policy=None,
+               root_path=None,
+               use_atexit=True,
+               auto_id_policy=datastore_stub_util.SEQUENTIAL):
     """Constructor.
 
     Initializes the SQLite database if necessary.
@@ -492,25 +566,46 @@ class DatastoreSqliteStub(datastore_stub_util.BaseDatastore,
       consistency_policy: The consistency policy to use or None to use the
         default. Consistency policies can be found in
         datastore_stub_util.*ConsistencyPolicy
+      root_path: string, the root path of the app.
+      use_atexit: bool, indicates if the stub should save itself atexit.
+      auto_id_policy: enum, datastore_stub_util.SEQUENTIAL or .SCATTERED
     """
     datastore_stub_util.BaseDatastore.__init__(self, require_indexes,
-                                               consistency_policy)
+                                               consistency_policy,
+                                               use_atexit and datastore_file,
+                                               auto_id_policy)
     apiproxy_stub.APIProxyStub.__init__(self, service_name)
     datastore_stub_util.DatastoreStub.__init__(self, weakref.proxy(self),
-                                               app_id, trusted)
+                                               app_id, trusted, root_path)
 
     self.__datastore_file = datastore_file
 
     self.__verbose = verbose
 
 
-    self.__id_map = {}
+    self.__id_map_sequential = {}
+    self.__id_map_scattered = {}
+    self.__id_counter_tables = {
+        datastore_stub_util.SEQUENTIAL: ('IdSeq', self.__id_map_sequential),
+        datastore_stub_util.SCATTERED: ('ScatteredIdCounters',
+                                         self.__id_map_scattered),
+        }
     self.__id_lock = threading.Lock()
+
+    if self.__verbose:
+      sql_conn = SQLiteConnectionWrapper
+    else:
+      sql_conn = sqlite3.Connection
 
     self.__connection = sqlite3.connect(
         self.__datastore_file or ':memory:',
         timeout=_MAX_TIMEOUT,
-        check_same_thread=False)
+        check_same_thread=False,
+        factory=sql_conn)
+
+
+
+    self.__connection.text_factory = lambda x: unicode(x, 'utf-8', 'ignore')
 
 
     self.__connection_lock = threading.RLock()
@@ -521,9 +616,10 @@ class DatastoreSqliteStub(datastore_stub_util.BaseDatastore,
 
     self.__query_history = {}
 
-    self._RegisterPseudoKind(KindPseudoKind(weakref.proxy(self)))
-    self._RegisterPseudoKind(PropertyPseudoKind(weakref.proxy(self)))
-    self._RegisterPseudoKind(NamespacePseudoKind(weakref.proxy(self)))
+    self._RegisterPseudoKind(KindPseudoKind())
+    self._RegisterPseudoKind(PropertyPseudoKind())
+    self._RegisterPseudoKind(NamespacePseudoKind())
+    self._RegisterPseudoKind(datastore_stub_util.EntityGroupPseudoKind())
 
     try:
       self.__Init()
@@ -534,12 +630,25 @@ class DatastoreSqliteStub(datastore_stub_util.BaseDatastore,
 
   def __Init(self):
 
+
+
+    self.__connection.execute('PRAGMA synchronous = OFF')
+
+
     self.__connection.executescript(_CORE_SCHEMA)
     self.__connection.commit()
 
 
     c = self.__connection.execute('SELECT app_id, name_space FROM Namespaces')
     self.__namespaces = set(c.fetchall())
+
+
+    for app_ns in self.__namespaces:
+      prefix = ('%s!%s' % app_ns).replace('"', '""')
+      self.__connection.execute(
+          'INSERT OR IGNORE INTO ScatteredIdCounters VALUES (?, ?)',
+          (prefix, 1))
+    self.__connection.commit()
 
 
 
@@ -557,7 +666,6 @@ class DatastoreSqliteStub(datastore_stub_util.BaseDatastore,
     try:
       datastore_stub_util.BaseDatastore.Clear(self)
       datastore_stub_util.DatastoreStub.Clear(self)
-
       c = conn.execute(
           "SELECT tbl_name FROM sqlite_master WHERE type = 'table'")
       for row in c.fetchall():
@@ -566,8 +674,8 @@ class DatastoreSqliteStub(datastore_stub_util.BaseDatastore,
       self._ReleaseConnection(conn)
 
     self.__namespaces = set()
-    self.__query_history = {}
-    self.__id_map = {}
+    self.__id_map_sequential = {}
+    self.__id_map_scattered = {}
     self.__Init()
 
   def Read(self):
@@ -577,12 +685,10 @@ class DatastoreSqliteStub(datastore_stub_util.BaseDatastore,
     """
     pass
 
-  def Write(self):
-    """Writes the datastore to disk.
-
-    Noop for compatibility with file stub.
-    """
-    pass
+  def Close(self):
+    """Closes the SQLite connection and releases the files."""
+    conn = self._GetConnection()
+    conn.close()
 
   @staticmethod
   def __MakeParamList(size):
@@ -597,12 +703,35 @@ class DatastoreSqliteStub(datastore_stub_util.BaseDatastore,
 
   @staticmethod
   def __GetEntityKind(key):
+    """Returns the kind of the Entity or Key.
+
+    It selects the kind of the last element of the entity_group element
+    list, as it contains the most specific type of the key.
+
+    Args:
+      key: A Key or EntityProto
+
+    Returns:
+      The kind of the sent Key or Entity
+    """
     if isinstance(key, entity_pb.EntityProto):
       key = key.key()
     return key.path().element_list()[-1].type()
 
   @staticmethod
   def __EncodeIndexPB(pb):
+    """Encodes a protobuf using sortable_pb_encoder to preserve entity order.
+
+    Using sortable_pb_encoder, encodes the protobuf, while using
+    the ordering semantics for the datastore, and validating for the special
+    case of uservalues ordering.
+
+    Args:
+      pb: An Entity protobuf.
+
+    Returns:
+      A buffer holding the encoded protobuf.
+    """
     if isinstance(pb, entity_pb.PropertyValue) and pb.has_uservalue():
 
       userval = entity_pb.PropertyValue()
@@ -615,9 +744,10 @@ class DatastoreSqliteStub(datastore_stub_util.BaseDatastore,
     return buffer(encoder.buffer().tostring())
 
   @staticmethod
-  def __AddQueryParam(params, param):
-    params.append(param)
-    return len(params)
+  def __AddQueryParam(query_params, param):
+    """Adds a parameter to the query parameters."""
+    query_params.append(param)
+    return len(query_params)
 
   @staticmethod
   def _CreateFilterString(filter_list, params):
@@ -633,6 +763,8 @@ class DatastoreSqliteStub(datastore_stub_util.BaseDatastore,
     """
     clauses = []
     for prop, operator, value in filter_list:
+      if operator == datastore_pb.Query_Filter.EXISTS:
+        continue
       sql_op = _OPERATOR_MAP[operator]
 
       value_index = DatastoreSqliteStub.__AddQueryParam(params, value)
@@ -705,7 +837,7 @@ class DatastoreSqliteStub(datastore_stub_util.BaseDatastore,
 
 
     conn.execute('UPDATE Apps SET indexes = ? WHERE app_id = ?',
-                 (app, indices.Encode()))
+                 (app, buffer(indices.Encode())))
 
   def _GetTablePrefix(self, data):
     """Returns the namespace prefix for a query.
@@ -806,17 +938,15 @@ class DatastoreSqliteStub(datastore_stub_util.BaseDatastore,
           'INSERT INTO "%s!EntitiesByProperty" VALUES (?, ?, ?, ?)' % prefix,
           RowGenerator(group))
 
-  def MakeSyncCall(self, service, call, request, response):
+  def MakeSyncCall(self, service, call, request, response, request_id=None):
     """The main RPC entry point. service must be 'datastore_v3'."""
     self.AssertPbIsInitialized(request)
     try:
       apiproxy_stub.APIProxyStub.MakeSyncCall(self, service, call, request,
-                                              response)
+                                              response, request_id)
     except sqlite3.OperationalError, e:
-      datastore_stub_util.Check(e.args[0] == 'database is locked',
-                                'Database is locked.',
-                                datastore_pb.Error.TIMEOUT)
-      raise
+      raise apiproxy_errors.ApplicationError(datastore_pb.Error.INTERNAL_ERROR,
+                                             e.args[0])
     self.AssertPbIsInitialized(response)
 
   def AssertPbIsInitialized(self, pb):
@@ -825,11 +955,6 @@ class DatastoreSqliteStub(datastore_stub_util.BaseDatastore,
     assert pb.IsInitialized(explanation), explanation
 
     pb.Encode()
-
-  def QueryHistory(self):
-    """Returns a dict that maps Query PBs to times they've been run."""
-    return dict((pb, times) for pb, times in self.__query_history.items() if
-                pb.app() == self._app_id)
 
   def __GenerateFilterInfo(self, filters, query):
     """Transform a list of filters into a more usable form.
@@ -976,7 +1101,8 @@ class DatastoreSqliteStub(datastore_stub_util.BaseDatastore,
         prefix,
         self._CreateFilterString(filters, params),
         self.__CreateOrderString(orders))
-    query = ('SELECT Entities.__path__, Entities.entity '
+    query = ('SELECT Entities.__path__, Entities.entity, '
+             'EntitiesByProperty.name, EntitiesByProperty.value '
              'FROM "%s!EntitiesByProperty" AS EntitiesByProperty INNER JOIN '
              '"%s!Entities" AS Entities USING (__path__) %s %s' % format_args)
     return query, params
@@ -1056,14 +1182,23 @@ class DatastoreSqliteStub(datastore_stub_util.BaseDatastore,
     if not order_info or order_info[-1][0] != '__key__':
       orders.append(('Entities.__path__', datastore_pb.Query_Order.ASCENDING))
 
+    select_arg = 'Entities.__path__, Entities.entity '
+
+    if query.property_name_list():
+      for value_i in join_name_map.values():
+        select_arg += ', %s.name, %s.value' % (value_i, value_i)
+
     params = []
     format_args = (
+        select_arg,
         prefix,
         ' '.join(joins),
         self._CreateFilterString(filters, params),
         self.__CreateOrderString(orders))
-    query = ('SELECT Entities.__path__, Entities.entity '
-             'FROM "%s!Entities" AS Entities %s %s %s' % format_args)
+
+    query = ('SELECT %s FROM "%s!Entities" AS Entities %s %s %s' % format_args)
+
+    logging.debug(query)
     return query, params
 
   def __MergeJoinQuery(self, query, filter_info, order_info):
@@ -1159,17 +1294,17 @@ class DatastoreSqliteStub(datastore_stub_util.BaseDatastore,
       db_cursor = conn.execute(sql_stmt, params)
       entities = (entity_pb.EntityProto(row[1]) for row in db_cursor.fetchall())
       return dict((datastore_types.ReferenceToKeyValue(entity.key()), entity)
-                   for entity in entities)
+                  for entity in entities)
     finally:
 
       self._ReleaseConnection(conn)
 
-  def _GetQueryCursor(self, query, filters, orders):
+  def _GetQueryCursor(self, query, filters, orders, index_list):
     """Returns a query cursor for the provided query.
 
     Args:
       conn: The SQLite connection.
-      query: A datastore_pb.Query protocol buffer.
+      query: A datastore_pb.Query protobuf.
     Returns:
       A QueryCursor object.
     """
@@ -1193,36 +1328,70 @@ class DatastoreSqliteStub(datastore_stub_util.BaseDatastore,
 
       sql_stmt, params = result
 
-      if self.__verbose:
-        logging.info("Executing statement '%s' with arguments %r",
-                     sql_stmt, [str(x) for x in params])
       conn = self._GetConnection()
       try:
-        db_cursor = conn.execute(sql_stmt, params)
+        if query.property_name_list():
+          db_cursor = _ProjectionPartialEntityGenerator(
+              conn.execute(sql_stmt, params))
+        else:
+          db_cursor = _DedupingEntityGenerator(conn.execute(sql_stmt, params))
         dsquery = datastore_stub_util._MakeQuery(query, filters, orders)
-        cursor = datastore_stub_util.IteratorCursor(
-            query, dsquery, orders, _DedupingEntityIterator(db_cursor))
+        cursor = datastore_stub_util.ListCursor(
+            query, dsquery, orders, index_list,
+            [r for r in db_cursor])
       finally:
         self._ReleaseConnection(conn)
     return cursor
 
-  def _Dynamic_RunQuery(self, query, query_result):
-    super(DatastoreSqliteStub, self)._Dynamic_RunQuery(query, query_result)
+  def __AllocateIdsFromBlock(self, conn, prefix, size, id_map, table):
+    datastore_stub_util.Check(size > 0, 'Size must be greater than 0.')
+    next_id, block_size = id_map.get(prefix, (0, 0))
+    if not block_size:
 
 
-    clone = datastore_pb.Query()
-    clone.CopyFrom(query)
-    clone.clear_hint()
-    clone.clear_limit()
-    clone.clear_count()
-    clone.clear_offset()
-    self.__query_history[clone] = self.__query_history.get(clone, 0) + 1
+      block_size = (size / 1000 + 1) * 1000
+      c = conn.execute('SELECT next_id FROM %s WHERE prefix = ? LIMIT 1'
+                       % table, (prefix,))
+      next_id = c.fetchone()[0]
+      c = conn.execute('UPDATE %s SET next_id = next_id + ? WHERE prefix = ?'
+                       % table, (block_size, prefix))
+      assert c.rowcount == 1
 
-  def _AllocateIds(self, reference, size=1, max_id=None):
+    if size > block_size:
+
+      c = conn.execute('SELECT next_id FROM %s WHERE prefix = ? LIMIT 1'
+                       % table, (prefix,))
+      start = c.fetchone()[0]
+      c = conn.execute('UPDATE %s SET next_id = next_id + ? WHERE prefix = ?'
+                       % table, (size, prefix))
+      assert c.rowcount == 1
+    else:
+
+      start = next_id;
+      next_id += size
+      block_size -= size
+      id_map[prefix] = (next_id, block_size)
+    end = start + size - 1
+    return start, end
+
+  def __AdvanceIdCounter(self, conn, prefix, max_id, table):
+    datastore_stub_util.Check(max_id >=0,
+                              'Max must be greater than or equal to 0.')
+    c = conn.execute('SELECT next_id FROM %s WHERE prefix = ? LIMIT 1'
+                     % table, (prefix,))
+    start = c.fetchone()[0]
+    if max_id >= start:
+      c = conn.execute('UPDATE %s SET next_id = ? WHERE prefix = ?' % table,
+                       (max_id + 1, prefix))
+      assert c.rowcount == 1
+    end = max(max_id, start - 1)
+    return start, end
+
+  def _AllocateSequentialIds(self, reference, size=1, max_id=None):
     conn = self._GetConnection()
     try:
-      datastore_stub_util.CheckAppId(reference.app(),
-                                     self._trusted, self._app_id)
+      datastore_stub_util.CheckAppId(self._trusted, self._app_id,
+                                     reference.app())
       datastore_stub_util.Check(not (size and max_id),
                                 'Both size and max cannot be set.')
 
@@ -1231,49 +1400,38 @@ class DatastoreSqliteStub(datastore_stub_util.BaseDatastore,
 
 
       if size:
-        datastore_stub_util.Check(size > 0, 'Size must be greater than 0.')
-        next_id, block_size = self.__id_map.get(prefix, (0, 0))
-        if not block_size:
-
-
-          block_size = (size / 1000 + 1) * 1000
-          c = conn.execute('SELECT next_id FROM IdSeq WHERE prefix = ? LIMIT 1',
-                           (prefix,))
-          next_id = c.fetchone()[0]
-          c = conn.execute(
-              'UPDATE IdSeq SET next_id = next_id + ? WHERE prefix = ?',
-              (block_size, prefix))
-          assert c.rowcount == 1
-
-        if size > block_size:
-
-          c = conn.execute('SELECT next_id FROM IdSeq WHERE prefix = ? LIMIT 1',
-                           (prefix,))
-          start = c.fetchone()[0]
-          c = conn.execute(
-              'UPDATE IdSeq SET next_id = next_id + ? WHERE prefix = ?',
-              (size, prefix))
-          assert c.rowcount == 1
-        else:
-
-          start = next_id;
-          next_id += size
-          block_size -= size
-          self.__id_map[prefix] = (next_id, block_size)
-        end = start + size - 1
+        start, end = self.__AllocateIdsFromBlock(conn, prefix, size,
+                                                 self.__id_map_sequential,
+                                                 'IdSeq')
       else:
-        datastore_stub_util.Check(max_id >=0,
-                                  'Max must be greater than or equal to 0.')
-        c = conn.execute('SELECT next_id FROM IdSeq WHERE prefix = ? LIMIT 1',
-                         (prefix,))
-        start = c.fetchone()[0]
-        if max_id and max_id >= start:
-          c = conn.execute(
-              'UPDATE IdSeq SET next_id = ? WHERE prefix = ?',
-              (max_id + 1, prefix))
-          assert c.rowcount == 1
-        end = max(max_id, start - 1)
-      return (long(start), long(end))
+        start, end = self.__AdvanceIdCounter(conn, prefix, max_id, 'IdSeq')
+      return long(start), long(end)
+    finally:
+      self._ReleaseConnection(conn)
+
+  def _AllocateIds(self, references):
+    conn = self._GetConnection()
+    try:
+      full_keys = []
+      for key in references:
+        datastore_stub_util.CheckAppId(self._trusted, self._app_id, key.app())
+        prefix = self._GetTablePrefix(key)
+        last_element = key.path().element_list()[-1]
+
+        if last_element.id() or last_element.has_name():
+          for el in key.path().element_list():
+            if el.id():
+              count, id_space = datastore_stub_util.IdToCounter(el.id())
+              table, _ = self.__id_counter_tables[id_space]
+              self.__AdvanceIdCounter(conn, prefix, count, table)
+
+        else:
+          count, _ = self.__AllocateIdsFromBlock(conn, prefix, 1,
+                                                 self.__id_map_scattered,
+                                                 'ScatteredIdCounters')
+          last_element.set_id(datastore_stub_util.ToScatteredId(count))
+          full_keys.append(key)
+      return full_keys
     finally:
       self._ReleaseConnection(conn)
 

@@ -30,8 +30,12 @@ import datetime
 import logging
 import re
 import time
-import simplejson
 import StringIO
+
+try:
+  import json as simplejson
+except ImportError:
+  import simplejson
 
 try:
   import PIL
@@ -39,18 +43,32 @@ try:
   from PIL import Image
 except ImportError:
   import _imaging
-  import Image
+  # Try importing the 'Image' module directly. If that fails, try
+  # importing it from the 'PIL' package (this is necessary to also
+  # cover "pillow" package installations).
+  try:
+    import Image
+  except ImportError:
+    from PIL import Image
 
 from google.appengine.api import apiproxy_stub
 from google.appengine.api import apiproxy_stub_map
-from google.appengine.api import blobstore
 from google.appengine.api import datastore
 from google.appengine.api import datastore_errors
 from google.appengine.api import datastore_types
 from google.appengine.api import images
+from google.appengine.api.blobstore import blobstore_stub
+from google.appengine.api.images import images_blob_stub
 from google.appengine.api.images import images_service_pb
 from google.appengine.runtime import apiproxy_errors
 
+
+
+
+
+GS_INFO_KIND = "__GsFileInfo__"
+
+BLOB_SERVING_URL_KIND = images_blob_stub.BLOB_SERVING_URL_KIND
 
 MAX_REQUEST_SIZE = 32 << 20
 
@@ -132,7 +150,7 @@ class ImagesServiceStub(apiproxy_stub.APIProxyStub):
     """
     super(ImagesServiceStub, self).__init__(service_name,
                                             max_request_size=MAX_REQUEST_SIZE)
-    self._host_prefix = host_prefix
+    self._blob_stub = images_blob_stub.ImagesBlobStub(host_prefix)
     Image.init()
 
   def _Dynamic_Composite(self, request, response):
@@ -261,25 +279,29 @@ class ImagesServiceStub(apiproxy_stub.APIProxyStub):
                                         request.transform_list(),
                                         correct_orientation)
 
-    response_value = self._EncodeImage(new_image, request.output())
+    substitution_rgb = None
+    if input_settings.has_transparent_substitution_rgb():
+      substitution_rgb = input_settings.transparent_substitution_rgb()
+    response_value = self._EncodeImage(new_image,
+                                       request.output(),
+                                       substitution_rgb)
     response.mutable_image().set_content(response_value)
     response.set_source_metadata(source_metadata)
 
   def _Dynamic_GetUrlBase(self, request, response):
-    """Trivial implementation of ImagesService::GetUrlBase.
+    self._blob_stub.GetUrlBase(request, response)
 
-    Args:
-      request: ImagesGetUrlBaseRequest, contains a blobkey to an image
-      response: ImagesGetUrlBaseResponse, contains a url to serve the image
-    """
-    response.set_url("%s/_ah/img/%s" % (self._host_prefix, request.blob_key()))
+  def _Dynamic_DeleteUrlBase(self, request, response):
+    self._blob_stub.DeleteUrlBase(request, response)
 
-  def _EncodeImage(self, image, output_encoding):
+  def _EncodeImage(self, image, output_encoding, substitution_rgb=None):
     """Encode the given image and return it in string form.
 
     Args:
       image: PIL Image object, image to encode.
       output_encoding: ImagesTransformRequest.OutputSettings object.
+      substitution_rgb: The color to use for transparent pixels if the output
+        format does not support transparency.
 
     Returns:
       str with encoded image information in given encoding format.
@@ -299,10 +321,20 @@ class ImagesServiceStub(apiproxy_stub.APIProxyStub):
 
 
 
-      image = image.convert("RGB")
+      if substitution_rgb:
+
+
+
+        blue = substitution_rgb & 0xFF
+        green = (substitution_rgb >> 8) & 0xFF
+        red = (substitution_rgb >> 16) & 0xFF
+        background = Image.new("RGB", image.size, (red, green, blue))
+        background.paste(image, mask=image.split()[3])
+        image = background
+      else:
+        image = image.convert("RGB")
 
     image.save(image_string, image_encoding)
-
     return image_string.getvalue()
 
   def _OpenImageData(self, image_data):
@@ -362,25 +394,25 @@ class ImagesServiceStub(apiproxy_stub.APIProxyStub):
           images_service_pb.ImagesServiceError.BAD_IMAGE_DATA)
 
   def _OpenBlob(self, blob_key):
-    key = datastore_types.Key.from_path(blobstore.BLOB_INFO_KIND,
-                                        blob_key,
-                                        namespace='')
+    """Create an Image from the blob data read from blob_key."""
+
     try:
-      datastore.Get(key)
+      _ = datastore.Get(
+          blobstore_stub.BlobstoreServiceStub.ToDatastoreBlobKey(blob_key))
     except datastore_errors.Error:
 
 
-      logging.exception('Blob with key %r does not exist', blob_key)
+      logging.exception("Blob with key %r does not exist", blob_key)
       raise apiproxy_errors.ApplicationError(
           images_service_pb.ImagesServiceError.UNSPECIFIED_ERROR)
 
-    blobstore_stub = apiproxy_stub_map.apiproxy.GetStub("blobstore")
+    blobstore_storage = apiproxy_stub_map.apiproxy.GetStub("blobstore")
 
 
     try:
-      blob_file = blobstore_stub.storage.OpenBlob(blob_key)
+      blob_file = blobstore_storage.storage.OpenBlob(blob_key)
     except IOError:
-      logging.exception('Could not get file for blob_key %r', blob_key)
+      logging.exception("Could not get file for blob_key %r", blob_key)
 
       raise apiproxy_errors.ApplicationError(
           images_service_pb.ImagesServiceError.BAD_IMAGE_DATA)
@@ -388,7 +420,7 @@ class ImagesServiceStub(apiproxy_stub.APIProxyStub):
     try:
       return Image.open(blob_file)
     except IOError:
-      logging.exception('Could not open image %r for blob_key %r',
+      logging.exception("Could not open image %r for blob_key %r",
                         blob_file, blob_key)
 
       raise apiproxy_errors.ApplicationError(
@@ -416,7 +448,8 @@ class ImagesServiceStub(apiproxy_stub.APIProxyStub):
                               current_height,
                               req_width,
                               req_height,
-                              crop_to_fit):
+                              crop_to_fit,
+                              allow_stretch):
     """Get new resize dimensions keeping the current aspect ratio.
 
     This uses the more restricting of the two requested values to determine
@@ -428,6 +461,7 @@ class ImagesServiceStub(apiproxy_stub.APIProxyStub):
       req_width: int, requested new width of the image, 0 if unspecified.
       req_height: int, requested new height of the image, 0 if unspecified.
       crop_to_fit: bool, True if the less restricting dimension should be used.
+      allow_stretch: bool, True is aspect ratio should be ignored.
 
     Raises:
       apiproxy_errors.ApplicationError: if crop_to_fit is True either req_width
@@ -441,7 +475,13 @@ class ImagesServiceStub(apiproxy_stub.APIProxyStub):
     width_ratio = float(req_width) / current_width
     height_ratio = float(req_height) / current_height
 
-    if crop_to_fit:
+    if allow_stretch:
+
+      if not req_width or not req_height:
+        raise apiproxy_errors.ApplicationError(
+            images_service_pb.ImagesServiceError.BAD_TRANSFORM_DATA)
+      return req_width, req_height
+    elif crop_to_fit:
 
       if not req_width or not req_height:
         raise apiproxy_errors.ApplicationError(
@@ -489,13 +529,15 @@ class ImagesServiceStub(apiproxy_stub.APIProxyStub):
             images_service_pb.ImagesServiceError.BAD_TRANSFORM_DATA)
 
     crop_to_fit = transform.crop_to_fit()
+    allow_stretch = transform.allow_stretch()
 
     current_width, current_height = image.size
     new_width, new_height = self._CalculateNewDimensions(current_width,
                                                          current_height,
                                                          width,
                                                          height,
-                                                         crop_to_fit)
+                                                         crop_to_fit,
+                                                         allow_stretch)
     new_image = image.resize((new_width, new_height), Image.ANTIALIAS)
     if crop_to_fit and (new_width > width or new_height > height):
 
@@ -567,10 +609,10 @@ class ImagesServiceStub(apiproxy_stub.APIProxyStub):
 
     width, height = image.size
 
-    box = (int(transform.crop_left_x() * width),
-           int(transform.crop_top_y() * height),
-           int(transform.crop_right_x() * width),
-           int(transform.crop_bottom_y() * height))
+    box = (int(round(left_x * width)),
+           int(round(top_y * height)),
+           int(round(right_x * width)),
+           int(round(bottom_y * height)))
 
     return image.crop(box)
 

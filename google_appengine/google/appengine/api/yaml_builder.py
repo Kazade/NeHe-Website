@@ -244,7 +244,7 @@ class BuilderHandler(yaml_listener.EventHandler):
 
 
     if hasattr(event, 'anchor') and event.anchor is not None:
-      raise NotImplementedError, 'Anchors not supported in this handler'
+      raise NotImplementedError('Anchors not supported in this handler')
 
   def _HandleValue(self, value):
     """Handle given value based on state of parser
@@ -342,7 +342,7 @@ class BuilderHandler(yaml_listener.EventHandler):
     Args:
       event: Ignored.
     """
-    raise NotImplementedError('Anchors not supported in this handler')
+    raise NotImplementedError('References not supported in this handler')
 
   def Scalar(self, event, loader):
     """Handle scalar value

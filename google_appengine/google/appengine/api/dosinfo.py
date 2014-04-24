@@ -33,6 +33,7 @@ import re
 import google
 import ipaddr
 
+from google.appengine.api import appinfo
 from google.appengine.api import validation
 from google.appengine.api import yaml_builder
 from google.appengine.api import yaml_listener
@@ -86,16 +87,18 @@ class BlacklistEntry(validation.Validated):
 class DosInfoExternal(validation.Validated):
   """Describes the format of a dos.yaml file."""
   ATTRIBUTES = {
+      appinfo.APPLICATION: validation.Optional(appinfo.APPLICATION_RE_STRING),
       BLACKLIST: validation.Optional(validation.Repeated(BlacklistEntry)),
   }
 
 
-def LoadSingleDos(dos_info):
+def LoadSingleDos(dos_info, open_fn=None):
   """Load a dos.yaml file or string and return a DosInfoExternal object.
 
   Args:
     dos_info: The contents of a dos.yaml file as a string, or an open file
       object.
+    open_fn: Function for opening files. Unused.
 
   Returns:
     A DosInfoExternal instance which represents the contents of the parsed yaml

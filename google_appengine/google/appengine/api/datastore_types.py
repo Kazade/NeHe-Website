@@ -52,12 +52,16 @@ import string
 import time
 import urlparse
 from xml.sax import saxutils
-from google.appengine.datastore import datastore_pb
-from google.appengine.api import datastore_errors
-from google.appengine.api import users
-from google.appengine.api import namespace_manager
-from google.net.proto import ProtocolBuffer
+
 from google.appengine.datastore import entity_pb
+
+from google.appengine.api import datastore_errors
+from google.appengine.api import namespace_manager
+from google.appengine.api import users
+from google.appengine.datastore import datastore_pb
+from google.appengine.datastore import datastore_pbs
+from google.appengine.datastore import entity_v4_pb
+from google.appengine.datastore import sortable_pb_encoder
 
 
 
@@ -81,6 +85,12 @@ _MAX_LINK_PROPERTY_LENGTH = 2083
 
 
 
+_MAX_RAW_PROPERTY_BYTES = 1000 * 1000
+
+
+
+
+
 
 
 RESERVED_PROPERTY_NAME = re.compile('^__.*__$')
@@ -94,8 +104,11 @@ RESERVED_PROPERTY_NAME = re.compile('^__.*__$')
 KEY_SPECIAL_PROPERTY = '__key__'
 _KEY_SPECIAL_PROPERTY = KEY_SPECIAL_PROPERTY
 _UNAPPLIED_LOG_TIMESTAMP_SPECIAL_PROPERTY = '__unapplied_log_timestamp_us__'
+SCATTER_SPECIAL_PROPERTY = '__scatter__'
 _SPECIAL_PROPERTIES = frozenset(
-    [KEY_SPECIAL_PROPERTY, _UNAPPLIED_LOG_TIMESTAMP_SPECIAL_PROPERTY])
+    [KEY_SPECIAL_PROPERTY,
+     _UNAPPLIED_LOG_TIMESTAMP_SPECIAL_PROPERTY,
+     SCATTER_SPECIAL_PROPERTY])
 
 
 
@@ -293,7 +306,7 @@ def SetNamespace(proto, namespace):
 
 def PartitionString(value, separator):
   """Equivalent to python2.5 str.partition()
-     TODO(gmariani) use str.partition() when python 2.5 is adopted.
+     TODO use str.partition() when python 2.5 is adopted.
 
   Args:
     value: String to be partitioned
@@ -373,7 +386,7 @@ class Key(object):
 
       self.__reference = entity_pb.Reference()
 
-  def to_path(self, _default_id=None):
+  def to_path(self, _default_id=None, _decode=True, _fail=True):
     """Construct the "path" of this key as a list.
 
     Returns:
@@ -387,11 +400,21 @@ class Key(object):
 
 
 
+
+    def Decode(s):
+      if _decode:
+        try:
+          return s.decode('utf-8')
+        except UnicodeDecodeError:
+          if _fail:
+            raise
+      return s
+
     path = []
     for path_element in self.__reference.path().element_list():
-      path.append(path_element.type().decode('utf-8'))
+      path.append(Decode(path_element.type()))
       if path_element.has_name():
-        path.append(path_element.name().decode('utf-8'))
+        path.append(Decode(path_element.name()))
       elif path_element.has_id():
         path.append(path_element.id())
       elif _default_id is not None:
@@ -553,7 +576,12 @@ class Key(object):
   def has_id_or_name(self):
     """Returns True if this entity has an id or name, False otherwise.
     """
-    return self.id_or_name() is not None
+    elems = self.__reference.path().element_list()
+    if elems:
+      e = elems[-1]
+      return bool(e.name() or e.id())
+    else:
+      return False
 
   def parent(self):
     """Returns this entity's parent, as a Key. If this entity has no parent,
@@ -712,7 +740,7 @@ class Key(object):
   def __cmp__(self, other):
     """Returns negative, zero, or positive when comparing two keys.
 
-    TODO(ryanb): for API v2, we should change this to make incomplete keys, ie
+    TODO: for API v2, we should change this to make incomplete keys, ie
     keys without an id or name, not equal to any other keys.
 
     Args:
@@ -727,10 +755,10 @@ class Key(object):
       return -2
 
     self_args = [self.__reference.app(), self.__reference.name_space()]
-    self_args += self.to_path(_default_id=0)
+    self_args += self.to_path(_default_id=0, _decode=False)
 
     other_args = [other.__reference.app(), other.__reference.name_space()]
-    other_args += other.to_path(_default_id=0)
+    other_args += other.to_path(_default_id=0, _decode=False)
 
     for self_component, other_component in zip(self_args, other_args):
       comparison = cmp(self_component, other_component)
@@ -748,7 +776,7 @@ class Key(object):
     Returns:
       int
     """
-    args = self.to_path(_default_id=0)
+    args = self.to_path(_default_id=0, _fail=False)
     args.append(self.__reference.app())
     return hash(type(args)) ^ hash(tuple(args))
 
@@ -1140,8 +1168,8 @@ class Text(unicode):
     raise TypeError('Text() argument should be str or unicode, not %s' %
                     type(arg).__name__)
 
-class Blob(str):
-  """A blob type, appropriate for storing binary data of any length.
+class _BaseByteType(str):
+  """A base class for datastore types that are encoded as bytes.
 
   This behaves identically to the Python str type, except for the
   constructor, which only accepts str arguments.
@@ -1158,13 +1186,13 @@ class Blob(str):
     if arg is None:
       arg = ''
     if isinstance(arg, str):
-      return super(Blob, cls).__new__(cls, arg)
+      return super(_BaseByteType, cls).__new__(cls, arg)
 
-    raise TypeError('Blob() argument should be str instance, not %s' %
-                    type(arg).__name__)
+    raise TypeError('%s() argument should be str instance, not %s' %
+                    (cls.__name__, type(arg).__name__))
 
   def ToXml(self):
-    """Output a blob as XML.
+    """Output bytes as XML.
 
     Returns:
       Base64 encoded version of itself for safe insertion in to an XML document.
@@ -1172,37 +1200,44 @@ class Blob(str):
     encoded = base64.urlsafe_b64encode(self)
     return saxutils.escape(encoded)
 
-class ByteString(str):
-  """A byte-string type, appropriate for storing short amounts of indexed data.
 
-  This behaves identically to Blob, except it's used only for short, indexed
-  byte strings.
+class Blob(_BaseByteType):
+  """A blob type, appropriate for storing binary data of any length.
+
+  This behaves identically to the Python str type, except for the
+  constructor, which only accepts str arguments.
+  """
+  pass
+
+
+class EmbeddedEntity(_BaseByteType):
+  """A proto encoded EntityProto.
+
+  This behaves identically to Blob, except for the
+  constructor, which accepts a str or EntityProto argument.
+
+  Can be decoded using datastore.Entity.FromProto(), db.model_from_protobuf() or
+  ndb.LocalStructuredProperty.
   """
 
   def __new__(cls, arg=None):
     """Constructor.
 
-    We only accept str instances.
-
     Args:
-      arg: optional str instance (default '')
+      arg: optional str or EntityProto instance (default '')
     """
-    if arg is None:
-      arg = ''
-    if isinstance(arg, str):
-      return super(ByteString, cls).__new__(cls, arg)
+    if isinstance(arg, entity_pb.EntityProto):
+      arg = arg.SerializePartialToString()
+    return super(EmbeddedEntity, cls).__new__(cls, arg)
 
-    raise TypeError('ByteString() argument should be str instance, not %s' %
-                    type(arg).__name__)
 
-  def ToXml(self):
-    """Output a ByteString as XML.
+class ByteString(_BaseByteType):
+  """A byte-string type, appropriate for storing short amounts of indexed data.
 
-    Returns:
-      Base64 encoded version of itself for safe insertion in to an XML document.
-    """
-    encoded = base64.urlsafe_b64encode(self)
-    return saxutils.escape(encoded)
+  This behaves identically to Blob, except it's used only for short, indexed
+  byte strings.
+  """
+  pass
 
 
 class BlobKey(object):
@@ -1266,9 +1301,12 @@ _PROPERTY_MEANINGS = {
 
 
   Blob:              entity_pb.Property.BLOB,
+  EmbeddedEntity:    entity_pb.Property.ENTITY_PROTO,
   ByteString:        entity_pb.Property.BYTESTRING,
   Text:              entity_pb.Property.TEXT,
   datetime.datetime: entity_pb.Property.GD_WHEN,
+  datetime.date:     entity_pb.Property.GD_WHEN,
+  datetime.time:     entity_pb.Property.GD_WHEN,
   _OverflowDateTime: entity_pb.Property.GD_WHEN,
   Category:          entity_pb.Property.ATOM_CATEGORY,
   Link:              entity_pb.Property.ATOM_LINK,
@@ -1284,6 +1322,7 @@ _PROPERTY_MEANINGS = {
 
 _PROPERTY_TYPES = frozenset([
   Blob,
+  EmbeddedEntity,
   ByteString,
   bool,
   Category,
@@ -1311,8 +1350,9 @@ _PROPERTY_TYPES = frozenset([
 
 
 
-_RAW_PROPERTY_TYPES = (Blob, Text)
-_RAW_PROPERTY_MEANINGS = (entity_pb.Property.BLOB, entity_pb.Property.TEXT)
+_RAW_PROPERTY_TYPES = (Blob, Text, EmbeddedEntity)
+_RAW_PROPERTY_MEANINGS = (entity_pb.Property.BLOB, entity_pb.Property.TEXT,
+                          entity_pb.Property.ENTITY_PROTO)
 
 
 def ValidatePropertyInteger(name, value):
@@ -1399,28 +1439,59 @@ def ValidatePropertyKey(name, value):
 
 _VALIDATE_PROPERTY_VALUES = {
   Blob: ValidatePropertyNothing,
-  ByteString: ValidatePropertyString,
+  EmbeddedEntity: ValidatePropertyNothing,
+  ByteString: ValidatePropertyNothing,
   bool: ValidatePropertyNothing,
-  Category: ValidatePropertyString,
+  Category: ValidatePropertyNothing,
   datetime.datetime: ValidatePropertyNothing,
   _OverflowDateTime: ValidatePropertyInteger,
-  Email: ValidatePropertyString,
+  Email: ValidatePropertyNothing,
   float: ValidatePropertyNothing,
   GeoPt: ValidatePropertyNothing,
-  IM: ValidatePropertyString,
+  IM: ValidatePropertyNothing,
   int: ValidatePropertyInteger,
   Key: ValidatePropertyKey,
-  Link: ValidatePropertyLink,
+  Link: ValidatePropertyNothing,
   long: ValidatePropertyInteger,
-  PhoneNumber: ValidatePropertyString,
-  PostalAddress: ValidatePropertyString,
+  PhoneNumber: ValidatePropertyNothing,
+  PostalAddress: ValidatePropertyNothing,
   Rating: ValidatePropertyInteger,
-  str: ValidatePropertyString,
+  str: ValidatePropertyNothing,
   Text: ValidatePropertyNothing,
   type(None): ValidatePropertyNothing,
-  unicode: ValidatePropertyString,
+  unicode: ValidatePropertyNothing,
   users.User: ValidatePropertyNothing,
   BlobKey: ValidatePropertyNothing,
+}
+
+_PROPERTY_TYPE_TO_INDEX_VALUE_TYPE = {
+  basestring: str,
+  Blob: str,
+  EmbeddedEntity: str,
+  ByteString: str,
+  bool: bool,
+  Category: str,
+  datetime.datetime: long,
+  datetime.date: long,
+  datetime.time: long,
+  _OverflowDateTime: long,
+  Email: str,
+  float: float,
+  GeoPt: GeoPt,
+  IM: str,
+  int: long,
+  Key: Key,
+  Link: str,
+  long: long,
+  PhoneNumber: str,
+  PostalAddress: str,
+  Rating: long,
+  str: str,
+  Text: str,
+  type(None): type(None),
+  unicode: str,
+  users.User: users.User,
+  BlobKey: str,
 }
 
 
@@ -1433,6 +1504,7 @@ def ValidateProperty(name, values, read_only=False):
   Args:
     name: Name of the property this is for.
     value: Value for the property as a Python native type.
+    read_only: deprecated
 
   Raises:
     BadPropertyError if the property name is invalid. BadValueError if the
@@ -1441,10 +1513,6 @@ def ValidateProperty(name, values, read_only=False):
     type-specific criteria.
   """
   ValidateString(name, 'property name', datastore_errors.BadPropertyError)
-
-  if not read_only and RESERVED_PROPERTY_NAME.match(name):
-    raise datastore_errors.BadPropertyError(
-        '%s is a reserved property name.' % name)
 
   values_type = type(values)
 
@@ -1455,10 +1523,7 @@ def ValidateProperty(name, values, read_only=False):
         (name, repr(values)))
 
 
-  if values_type is list:
-    multiple = True
-  else:
-    multiple = False
+  if values_type is not list:
     values = [values]
 
 
@@ -1631,6 +1696,7 @@ def PackFloat(name, value, pbvalue):
 
 _PACK_PROPERTY_VALUES = {
   Blob: PackBlob,
+  EmbeddedEntity: PackBlob,
   ByteString: PackBlob,
   bool: PackBool,
   Category: PackString,
@@ -1749,10 +1815,17 @@ _PROPERTY_CONVERSIONS = {
   entity_pb.Property.GD_POSTALADDRESS:  PostalAddress,
   entity_pb.Property.GD_RATING:         Rating,
   entity_pb.Property.BLOB:              Blob,
+  entity_pb.Property.ENTITY_PROTO:      EmbeddedEntity,
   entity_pb.Property.BYTESTRING:        ByteString,
   entity_pb.Property.TEXT:              Text,
   entity_pb.Property.BLOBKEY:           BlobKey,
 }
+
+
+_NON_UTF8_MEANINGS = frozenset((entity_pb.Property.BLOB,
+                                entity_pb.Property.ENTITY_PROTO,
+                                entity_pb.Property.BYTESTRING,
+                                entity_pb.Property.INDEX_VALUE))
 
 
 def FromPropertyPb(pb):
@@ -1765,14 +1838,16 @@ def FromPropertyPb(pb):
     # return type is determined by the type of the argument
     string, int, bool, double, users.User, or one of the atom or gd types
   """
+
+
+
   pbval = pb.value()
   meaning = pb.meaning()
 
   if pbval.has_stringvalue():
     value = pbval.stringvalue()
-    if not pb.has_meaning() or meaning not in (entity_pb.Property.BLOB,
-                                               entity_pb.Property.BYTESTRING):
-      value = unicode(value.decode('utf-8'))
+    if not pb.has_meaning() or meaning not in _NON_UTF8_MEANINGS:
+      value = unicode(value, 'utf-8')
   elif pbval.has_int64value():
 
 
@@ -1788,15 +1863,15 @@ def FromPropertyPb(pb):
   elif pbval.has_pointvalue():
     value = GeoPt(pbval.pointvalue().x(), pbval.pointvalue().y())
   elif pbval.has_uservalue():
-    email = unicode(pbval.uservalue().email().decode('utf-8'))
-    auth_domain = unicode(pbval.uservalue().auth_domain().decode('utf-8'))
+    email = unicode(pbval.uservalue().email(), 'utf-8')
+    auth_domain = unicode(pbval.uservalue().auth_domain(), 'utf-8')
     obfuscated_gaiaid = pbval.uservalue().obfuscated_gaiaid().decode('utf-8')
-    obfuscated_gaiaid = unicode(obfuscated_gaiaid)
+    obfuscated_gaiaid = unicode(pbval.uservalue().obfuscated_gaiaid(), 'utf-8')
 
     federated_identity = None
     if pbval.uservalue().has_federated_identity():
-      federated_identity = unicode(
-          pbval.uservalue().federated_identity().decode('utf-8'))
+      federated_identity = unicode(pbval.uservalue().federated_identity(),
+                                   'utf-8')
 
 
 
@@ -1816,6 +1891,63 @@ def FromPropertyPb(pb):
     raise datastore_errors.BadValueError(
       'Error converting pb: %s\nException was: %s' % (pb, msg))
 
+  return value
+
+
+def RestoreFromIndexValue(index_value, data_type):
+  """Restores a index value to the correct datastore type.
+
+  Projection queries return property values direclty from a datastore index.
+  These values are the native datastore values, one of str, bool, long, float,
+  GeoPt, Key or User. This function restores the original value when the the
+  original type is known.
+
+  This function returns the value type returned when decoding a normal entity,
+  not necessarily of type data_type. For example, data_type=int returns a
+  long instance.
+
+  Args:
+    index_value: The value returned by FromPropertyPb for the projected
+      property.
+    data_type: The type of the value originally given to ToPropertyPb
+
+  Returns:
+    The restored property value.
+
+  Raises:
+    datastore_errors.BadValueError if the value cannot be restored.
+  """
+  raw_type = _PROPERTY_TYPE_TO_INDEX_VALUE_TYPE.get(data_type)
+  if raw_type is None:
+    raise datastore_errors.BadValueError(
+        'Unsupported data type (%r)' % data_type)
+
+  if index_value is None:
+    return index_value
+
+
+
+  if not isinstance(index_value, raw_type):
+    raise datastore_errors.BadValueError(
+        'Unsupported converstion. Expected %r got %r' %
+        (type(index_value), raw_type))
+
+  meaning = _PROPERTY_MEANINGS.get(data_type)
+
+
+  if isinstance(index_value, str) and meaning not in _NON_UTF8_MEANINGS:
+    index_value = unicode(index_value, 'utf-8')
+
+
+  conv = _PROPERTY_CONVERSIONS.get(meaning)
+  if not conv:
+    return index_value
+
+  try:
+    value = conv(index_value)
+  except (KeyError, ValueError, IndexError, TypeError, AttributeError), msg:
+    raise datastore_errors.BadValueError(
+      'Error converting value: %r\nException was: %s' % (index_value, msg))
   return value
 
 
@@ -1854,6 +1986,7 @@ _PROPERTY_TYPE_STRINGS = {
     'float':            float,
     'key':              Key,
     'blob':             Blob,
+    'entity:proto':     EmbeddedEntity,
     'bytestring':       ByteString,
     'text':             Text,
     'user':             users.User,
@@ -1937,26 +2070,33 @@ def PropertyValueFromString(type_,
   return type_(value_string)
 
 
-def ReferenceToKeyValue(reference):
-  """Converts a entity_pb.Reference into a comparable hashable "key" value.
+def ReferenceToKeyValue(key):
+  """Converts a key into a comparable hashable "key" value.
 
   Args:
-    reference: The entity_pb.Reference from which to construct the key value.
+    key: The entity_pb.Reference or entity_v4_pb.Key from which to construct
+        the key value.
 
   Returns:
-    A comparable and hashable representation of the given reference that is
-    compatible with one derived from a reference property value.
+    A comparable and hashable representation of the given key that is
+    compatible with one derived from a key property value.
   """
-  if isinstance(reference, entity_pb.Reference):
-    element_list = reference.path().element_list()
-  elif isinstance(reference, entity_pb.PropertyValue_ReferenceValue):
-    element_list = reference.pathelement_list()
+  if isinstance(key, entity_v4_pb.Key):
+    v4_key = key
+    key = entity_pb.Reference()
+    datastore_pbs.get_entity_converter().v4_to_v3_reference(v4_key, key)
+
+  if isinstance(key, entity_pb.Reference):
+    element_list = key.path().element_list()
+  elif isinstance(key, entity_pb.PropertyValue_ReferenceValue):
+    element_list = key.pathelement_list()
   else:
     raise datastore_errors.BadArgumentError(
-        "reference arg expected to be entity_pb.Reference (%r)" % (reference,))
+        "key arg expected to be entity_pb.Reference or entity_v4.Key (%r)"
+        % (key,))
 
   result = [entity_pb.PropertyValue.kReferenceValueGroup,
-            reference.app(), reference.name_space()]
+            key.app(), key.name_space()]
   for element in element_list:
     result.append(element.type())
     if element.has_name():
@@ -1993,7 +2133,10 @@ def PropertyValueToKeyValue(prop_value):
   if prop_value.has_booleanvalue():
     return (entity_pb.PropertyValue.kbooleanValue, prop_value.booleanvalue())
   if prop_value.has_doublevalue():
-    return (entity_pb.PropertyValue.kdoubleValue, prop_value.doublevalue())
+
+    encoder = sortable_pb_encoder.Encoder()
+    encoder.putDouble(prop_value.doublevalue())
+    return (entity_pb.PropertyValue.kdoubleValue, tuple(encoder.buf))
   if prop_value.has_pointvalue():
     return (entity_pb.PropertyValue.kPointValueGroup,
             prop_value.pointvalue().x(), prop_value.pointvalue().y())

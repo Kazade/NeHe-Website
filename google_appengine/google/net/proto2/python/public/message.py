@@ -39,13 +39,13 @@ class Message(object):
   compiler.  These generated types subclass Message and implement the methods
   shown below.
 
-  TODO(robinson): Link to an HTML document here.
+  TODO: Link to an HTML document here.
 
-  TODO(robinson): Document that instances of this class will also
+  TODO: Document that instances of this class will also
   have an Extensions attribute with __getitem__ and __setitem__.
   Again, not sure how to best convey this.
 
-  TODO(robinson): Document that the class must also have a static
+  TODO: Document that the class must also have a static
     RegisterExtension(extension_field) method.
     Not sure how to best express at this point.
   """
@@ -62,6 +62,7 @@ class Message(object):
     return clone
 
   def __eq__(self, other_msg):
+    """Recursively compares two messages by value and structure."""
     raise NotImplementedError
 
   def __ne__(self, other_msg):
@@ -72,9 +73,11 @@ class Message(object):
     raise TypeError('unhashable object')
 
   def __str__(self):
+    """Outputs a human-readable representation of the message."""
     raise NotImplementedError
 
   def __unicode__(self):
+    """Outputs a human-readable representation of the message."""
     raise NotImplementedError
 
   def MergeFrom(self, other_msg):
@@ -142,13 +145,13 @@ class Message(object):
       - Else, (it's a nonrepeated composite), we recursively merge
         into the existing composite.
 
-    TODO(robinson): Document handling of unknown fields.
+    TODO: Document handling of unknown fields.
 
     Args:
       serialized: Any object that allows us to call buffer(serialized)
         to access a string of bytes using the buffer interface.
 
-    TODO(robinson): When we switch to a helper, this will return None.
+    TODO: When we switch to a helper, this will return None.
 
     Returns:
       The number of bytes read from |serialized|.

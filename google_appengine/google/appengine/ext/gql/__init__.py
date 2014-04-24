@@ -36,6 +36,7 @@ data stored.
 
 import calendar
 import datetime
+import itertools
 import logging
 import re
 import time
@@ -93,7 +94,7 @@ class GQL(object):
   """A GQL interface to the datastore.
 
   GQL is a SQL-like language which supports more object-like semantics
-  in a langauge that is familiar to SQL users. The language supported by
+  in a language that is familiar to SQL users. The language supported by
   GQL will change over time, but will start off with fairly simple
   semantics.
 
@@ -102,12 +103,14 @@ class GQL(object):
 
   The syntax for SELECT is fairly straightforward:
 
-  SELECT [* | __key__ ] [FROM <entity>]
+  SELECT [[DISTINCT] <property> [, <property> ...] | * | __key__ ]
+    [FROM <entity>]
     [WHERE <condition> [AND <condition> ...]]
     [ORDER BY <property> [ASC | DESC] [, <property> [ASC | DESC] ...]]
     [LIMIT [<offset>,]<count>]
     [OFFSET <offset>]
-    [HINT (ORDER_FIRST | HINT FILTER_FIRST | HINT ANCESTOR_FIRST)]
+    [HINT (ORDER_FIRST | FILTER_FIRST | ANCESTOR_FIRST)]
+    [;]
 
   <condition> := <property> {< | <= | > | >= | = | != | IN} <value>
   <condition> := <property> {< | <= | > | >= | = | != | IN} CAST(<value>)
@@ -199,11 +202,23 @@ class GQL(object):
     ,|
     \*|
     -?\d+(?:\.\d+)?|
-    \w+|
+    \w+(?:\.\w+)*|
     (?:"[^"\s]+")+|
     \(|\)|
     \S+
     """, re.VERBOSE | re.IGNORECASE)
+
+
+
+
+
+
+  RESERVED_KEYWORDS = (frozenset(('SELECT', 'DISTINCT', 'FROM', 'WHERE', 'IN',
+                                  'ANCESTOR', 'IS', 'AND', 'OR', 'NOT', 'ORDER',
+                                  'BY', 'ASC', 'DESC', 'GROUP', 'LIMIT',
+                                  'OFFSET', 'HINT', 'ORDER_FIRST',
+                                  'FILTER_FIRST', 'ANCESTOR_FIRST')),
+                       frozenset())
 
 
 
@@ -213,6 +228,16 @@ class GQL(object):
 
 
   __ANCESTOR = -1
+
+
+  _kind = None
+  _keys_only = False
+  __projection = None
+  __distinct = False
+  __has_ancestor = False
+  __offset = -1
+  __limit = -1
+  __hint = ''
 
   def __init__(self, query_string, _app=None, _auth_domain=None,
                namespace=None):
@@ -230,30 +255,47 @@ class GQL(object):
       datastore_errors.BadQueryError: if the query is not parsable.
     """
 
-    self._kind = ''
-    self.__filters = {}
-
-
-    self.__has_ancestor = False
-    self.__orderings = []
-    self.__offset = -1
-    self.__limit = -1
-    self.__hint = ''
     self.__app = _app
 
     self.__namespace = namespace
+
     self.__auth_domain = _auth_domain
 
 
-
     self.__symbols = self.TOKENIZE_REGEX.findall(query_string)
-    self.__next_symbol = 0
-    if not self.__Select():
-
-      raise datastore_errors.BadQueryError(
-          'Unable to parse query')
+    initial_error = None
+    for backwards_compatibility_mode in xrange(len(self.RESERVED_KEYWORDS)):
+      self.__InitializeParseState()
+      self.__active_reserved_words = self.__GenerateReservedWords(
+          backwards_compatibility_mode)
+      try:
+        self.__Select()
+      except datastore_errors.BadQueryError, error:
+        logging.log(LOG_LEVEL, initial_error)
+        if not initial_error:
+          initial_error = error
+      else:
+        break
     else:
-      pass
+      raise initial_error
+
+  def __InitializeParseState(self):
+
+    self._kind = None
+    self._keys_only = False
+    self.__projection = None
+    self.__distinct = False
+    self.__has_ancestor = False
+    self.__offset = -1
+    self.__limit = -1
+    self.__hint = ''
+
+
+
+    self.__filters = {}
+
+    self.__orderings = []
+    self.__next_symbol = 0
 
   def Bind(self, args, keyword_args, cursor=None, end_cursor=None):
     """Bind the existing query to the argument list.
@@ -287,20 +329,22 @@ class GQL(object):
     else:
       query_count = 1
 
-    for i in xrange(query_count):
+    for _ in xrange(query_count):
       queries.append(datastore.Query(self._kind,
                                      _app=self.__app,
                                      keys_only=self._keys_only,
+                                     projection=self.__projection,
+                                     distinct=self.__distinct,
                                      namespace=self.__namespace,
                                      cursor=cursor,
                                      end_cursor=end_cursor))
 
     logging.log(LOG_LEVEL,
-                'Binding with %i positional args %s and %i keywords %s'
-                , len(args), args, len(keyword_args), keyword_args)
+                'Binding with %i positional args %s and %i keywords %s',
+                len(args), args, len(keyword_args), keyword_args)
 
-    for ((identifier, condition), value_list) in self.__filters.iteritems():
-      for (operator, params) in value_list:
+    for (identifier, condition), value_list in self.__filters.iteritems():
+      for operator, params in value_list:
         value = self.__Operate(args, keyword_args, used_args, operator, params)
         if not self.__IsMultiQuery(condition):
           for query in queries:
@@ -316,9 +360,7 @@ class GQL(object):
 
 
     if enumerated_queries:
-      logging.log(LOG_LEVEL,
-                  'Multiple Queries Bound: %s',
-                  enumerated_queries)
+      logging.log(LOG_LEVEL, 'Multiple Queries Bound: %s', enumerated_queries)
 
 
 
@@ -360,8 +402,8 @@ class GQL(object):
     enumerated_queries = []
 
 
-    for ((identifier, condition), value_list) in self.__filters.iteritems():
-      for (operator, params) in value_list:
+    for (identifier, condition), value_list in self.__filters.iteritems():
+      for operator, params in value_list:
         value = self.__Operate(args, keyword_args, used_args, operator, params)
         self.__AddMultiQuery(identifier, condition, value, enumerated_queries)
 
@@ -580,7 +622,7 @@ class GQL(object):
       if isinstance(param, Literal):
         value = param.Get()
       else:
-        value = self.__GetParam(param, args, keyword_args)
+        value = self.__GetParam(param, args, keyword_args, used_args=used_args)
         if isinstance(param, int):
           used_args.add(param - 1)
         logging.log(LOG_LEVEL, 'found param for bind: %s value: %s',
@@ -601,41 +643,50 @@ class GQL(object):
     """Return whether or not this condition could require multiple queries."""
     return condition.lower() in ('in', '!=')
 
-  def __GetParam(self, reference, args, keyword_args):
+  def __GetParam(self, param, args, keyword_args, used_args=None):
     """Get the specified parameter from the input arguments.
 
+    If param is an index or named reference, args and keyword_args are used. If
+    param is a cast operator tuple, will use __Operate to return the cast value.
+
     Args:
-      reference: id for a filter reference in the filter list (string or
-          number)
+      param: represents either an id for a filter reference in the filter list
+          (string or number) or a tuple (cast operator, params)
       args: positional args passed in by the user (tuple of arguments, indexed
-          numerically by "reference")
-      keyword_args: dict of keyword based arguments (strings in "reference")
+          numerically by "param")
+      keyword_args: dict of keyword based arguments (strings in "param")
+      used_args: Index arguments passed from __Operate to determine which index
+          references have been used. Default is None.
 
     Returns:
       The specified param from the input list.
 
     Raises:
-      BadArgumentError if the referenced argument doesn't exist.
+      BadArgumentError: if the referenced argument doesn't exist or no type cast
+      operator is present.
     """
     num_args = len(args)
-    if isinstance(reference, int):
+    if isinstance(param, int):
 
-      if reference <= num_args:
-        return args[reference - 1]
+      if param <= num_args:
+        return args[param - 1]
       else:
         raise datastore_errors.BadArgumentError(
             'Missing argument for bind, requires argument #%i, '
-            'but only has %i args.' % (reference, num_args))
-    elif isinstance(reference, basestring):
-      if reference in keyword_args:
-        return keyword_args[reference]
+            'but only has %i args.' % (param, num_args))
+    elif isinstance(param, basestring):
+      if param in keyword_args:
+        return keyword_args[param]
       else:
         raise datastore_errors.BadArgumentError(
             'Missing named arguments for bind, requires argument %s' %
-            reference)
+            param)
+    elif isinstance(param, tuple) and len(param) == 2:
+      cast_op, params = param
+      return self.__Operate(args, keyword_args, used_args, cast_op, params)
     else:
 
-      assert False, 'Unknown reference %s' % reference
+      assert False, 'Unknown parameter %s' % param
 
   def __AddMultiQuery(self, identifier, condition, value, enumerated_queries):
     """Helper function to add a multi-query to previously enumerated queries.
@@ -667,13 +718,13 @@ class GQL(object):
         Number of iterations needed to fill the structure
       """
       if not enumerated_queries:
-        for i in xrange(n):
+        for _ in xrange(n):
           queries.append({})
         return 1
       else:
         old_size = len(queries)
         tmp_queries = []
-        for i in xrange(n - 1):
+        for _ in xrange(n - 1):
           [tmp_queries.append(filter_map.copy()) for filter_map in queries]
         queries.extend(tmp_queries)
         queries.sort()
@@ -760,7 +811,7 @@ class GQL(object):
       it = bind_results.Run()
 
       try:
-        for i in xrange(offset):
+        for _ in xrange(offset):
           it.next()
       except StopIteration:
         pass
@@ -801,6 +852,14 @@ class GQL(object):
     """Returns True if this query returns Keys, False if it returns Entities."""
     return self._keys_only
 
+  def projection(self):
+    """Returns the tuple of properties in the projection, or None."""
+    return self.__projection
+
+  def is_distinct(self):
+    """Returns True if this query is marked as distinct."""
+    return self.__distinct
+
   def kind(self):
     return self._kind
 
@@ -808,7 +867,7 @@ class GQL(object):
 
   @property
   def _entity(self):
-    logging.warning('GQL._entity is deprecated. Please use GQL.kind().')
+    logging.error('GQL._entity is deprecated. Please use GQL.kind().')
     return self._kind
 
 
@@ -822,7 +881,7 @@ class GQL(object):
   __quoted_string_regex = re.compile(r'((?:\'[^\'\n\r]*\')+)')
   __ordinal_regex = re.compile(r':(\d+)$')
   __named_regex = re.compile(r':(\w+)$')
-  __identifier_regex = re.compile(r'(\w+)$')
+  __identifier_regex = re.compile(r'(\w+(?:\.\w+)*)$')
 
 
 
@@ -909,7 +968,7 @@ class GQL(object):
     return None
 
   def __AcceptTerminal(self):
-    """Only accept an empty string.
+    """Accept either a single semi-colon or an empty string.
 
     Returns:
       True
@@ -917,6 +976,9 @@ class GQL(object):
     Raises:
       BadQueryError if there are unconsumed symbols in the query.
     """
+
+    self.__Accept(';')
+
     if self.__next_symbol < len(self.__symbols):
       self.__Error('Expected no additional symbols')
     return True
@@ -931,8 +993,17 @@ class GQL(object):
       True if parsing completed okay.
     """
     self.__Expect('SELECT')
-    result_type = self.__AcceptRegex(self.__result_type_regex)
-    self._keys_only = (result_type == '__key__')
+    if ('DISTINCT' in self.__active_reserved_words
+        and self.__Accept('DISTINCT')):
+      self.__distinct = True
+    if not self.__Accept('*'):
+      props = [self.__ExpectIdentifier()]
+      while self.__Accept(','):
+        props.append(self.__ExpectIdentifier())
+      if props == ['__key__']:
+        self._keys_only = True
+      else:
+        self.__projection = tuple(props)
     return self.__From()
 
   def __From(self):
@@ -946,14 +1017,7 @@ class GQL(object):
       True if parsing completed okay.
     """
     if self.__Accept('FROM'):
-      kind = self.__Identifier()
-      if kind:
-        self._kind = kind
-      else:
-        self.__Error('Identifier Expected')
-        return False
-    else:
-      self._kind = None
+      self._kind = self.__ExpectIdentifier()
     return self.__Where()
 
   def __Where(self):
@@ -974,12 +1038,10 @@ class GQL(object):
     identifier = self.__Identifier()
     if not identifier:
       self.__Error('Invalid WHERE Identifier')
-      return False
 
     condition = self.__AcceptRegex(self.__conditions_regex)
     if not condition:
       self.__Error('Invalid WHERE Condition')
-      return False
     self.__CheckFilterSyntax(identifier, condition)
 
     if not self.__AddSimpleFilter(identifier, condition, self.__Reference()):
@@ -990,7 +1052,7 @@ class GQL(object):
         if (not type_cast or
             not self.__AddProcessedParameterFilter(identifier, condition,
                                                    *type_cast)):
-          self.__Error('Invalid WHERE condition')
+          self.__Error('Invalid WHERE Condition')
 
 
     if self.__Accept('AND'):
@@ -998,17 +1060,27 @@ class GQL(object):
 
     return self.__OrderBy()
 
-  def __GetValueList(self):
+  def __GetValueList(self, values_intended_for_list=False):
     """Read in a list of parameters from the tokens and return the list.
 
-    Reads in a set of tokens, but currently only accepts literals, positional
-    parameters, or named parameters. Or empty list if nothing was parsed.
+    Reads in a set of tokens by consuming symbols. If the returned list of
+    values is not intended to be used within a list, only accepts literals,
+    positional parameters, or named parameters. If the returned list of
+    values is intended to be used within a list, also accepts values
+    (cast operator, params) which represent a custom GAE Type and are
+    returned by __TypeCast.
+
+    Args:
+      values_intended_for_list: Boolean to determine if the returned value list
+          is intended to be used as values in a list or as values in a custom
+          GAE Type. Defaults to False.
 
     Returns:
       A list of values parsed from the input, with values taking the form of
       strings (unbound, named reference), integers (unbound, positional
-      reference), or Literal() (bound value usable directly as part of a filter
-      with no additional information).
+      reference), Literal() (bound value usable directly as part of a filter
+      with no additional information), or a tuple (cast operator, params)
+      representing a custom GAE Type. Or empty list if nothing was parsed.
     """
     params = []
 
@@ -1020,6 +1092,12 @@ class GQL(object):
         literal = self.__Literal()
         if literal:
           params.append(literal)
+        elif values_intended_for_list:
+          type_cast = self.__TypeCast(can_cast_list=False)
+          if type_cast is None:
+            self.__Error('Filter list value could not be cast '
+                         'to a datastore type')
+          params.append(type_cast)
         else:
           self.__Error('Parameter list requires literal or reference parameter')
 
@@ -1110,7 +1188,11 @@ class GQL(object):
     """
     logging.log(LOG_LEVEL, 'Try Identifier')
     identifier = self.__AcceptRegex(self.__identifier_regex)
-    if not identifier:
+    if identifier:
+      if identifier.upper() in self.__active_reserved_words:
+        self.__next_symbol -= 1
+        self.__Error('Identifier is a reserved keyword')
+    else:
 
 
       identifier = self.__AcceptRegex(self.__quoted_identifier_regex)
@@ -1121,6 +1203,12 @@ class GQL(object):
 
         identifier = identifier[1:-1].replace('""', '"')
     return identifier
+
+  def __ExpectIdentifier(self):
+    id = self.__Identifier()
+    if not id:
+      self.__Error('Identifier Expected')
+    return id
 
   def __Reference(self):
     """Consume a parameter reference and return it.
@@ -1152,24 +1240,27 @@ class GQL(object):
       integer, or floating point value).
     """
     logging.log(LOG_LEVEL, 'Try Literal')
+
     literal = None
-    try:
-      literal = int(self.__symbols[self.__next_symbol])
-    except ValueError:
-      pass
-    else:
-      self.__next_symbol += 1
 
-
-
-
-    if literal is None:
+    if self.__next_symbol < len(self.__symbols):
       try:
-        literal = float(self.__symbols[self.__next_symbol])
+        literal = int(self.__symbols[self.__next_symbol])
       except ValueError:
         pass
       else:
         self.__next_symbol += 1
+
+
+
+
+      if literal is None:
+        try:
+          literal = float(self.__symbols[self.__next_symbol])
+        except ValueError:
+          pass
+        else:
+          self.__next_symbol += 1
 
     if literal is None:
 
@@ -1199,18 +1290,25 @@ class GQL(object):
     else:
       return None
 
-  def __TypeCast(self):
+  def __TypeCast(self, can_cast_list=True):
     """Check if the next operation is a type-cast and return the cast if so.
 
     Casting operators look like simple function calls on their parameters. This
     code returns the cast operator found and the list of parameters provided by
     the user to complete the cast operation.
 
+    In the case of a list, we allow the call to __GetValueList to also accept
+    custom GAE Types as values.
+
+    Args:
+      can_cast_list: Boolean to determine if list can be returned as one of the
+          cast operators. Default value is True.
+
     Returns:
       A tuple (cast operator, params) which represents the cast operation
       requested and the parameters parsed from the cast clause.
 
-      None - if there is no TypeCast function.
+      None - if there is no TypeCast function or list is not allowed to be cast.
     """
 
 
@@ -1218,7 +1316,7 @@ class GQL(object):
     logging.log(LOG_LEVEL, 'Try Type Cast')
     cast_op = self.__AcceptRegex(self.__cast_regex)
     if not cast_op:
-      if self.__Accept('('):
+      if can_cast_list and self.__Accept('('):
 
         cast_op = 'list'
       else:
@@ -1227,7 +1325,7 @@ class GQL(object):
       cast_op = cast_op.lower()
       self.__Expect('(')
 
-    params = self.__GetValueList()
+    params = self.__GetValueList(values_intended_for_list=(cast_op == 'list'))
     self.__Expect(')')
 
     logging.log(LOG_LEVEL, 'Got casting operator %s with params %s',
@@ -1336,8 +1434,10 @@ class GQL(object):
         self.__hint = 'ANCESTOR_FIRST'
       else:
         self.__Error('Unknown HINT')
-        return False
     return self.__AcceptTerminal()
+
+  def __GenerateReservedWords(self, level):
+    return frozenset(itertools.chain(*self.RESERVED_KEYWORDS[level:]))
 
 
 

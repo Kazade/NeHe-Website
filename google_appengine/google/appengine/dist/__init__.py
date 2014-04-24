@@ -27,11 +27,13 @@
 
 __all__ = [
 
+    '_threading_local',
     'ftplib',
     'httplib',
     'neo_cgi',
     'py_imp',
     'select',
+    'py_select',
     'socket',
     'subprocess',
     'tempfile',

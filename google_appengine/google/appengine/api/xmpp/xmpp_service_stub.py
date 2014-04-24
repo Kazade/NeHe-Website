@@ -33,8 +33,12 @@ import os
 
 from google.appengine.api import apiproxy_stub
 from google.appengine.api import app_identity
-from google.appengine.api import xmpp
 from google.appengine.api.xmpp import xmpp_service_pb
+from google.appengine.runtime import apiproxy_errors
+
+
+
+INVALID_JID_CHARACTERS = ',;()[]'
 
 
 class XmppServiceStub(apiproxy_stub.APIProxyStub):
@@ -43,6 +47,8 @@ class XmppServiceStub(apiproxy_stub.APIProxyStub):
   This stub does not use an XMPP network. It prints messages to the console
   instead of sending any stanzas.
   """
+
+  THREADSAFE = True
 
   def __init__(self, log=logging.info, service_name='xmpp'):
     """Initializer.
@@ -64,12 +70,20 @@ class XmppServiceStub(apiproxy_stub.APIProxyStub):
       request: A PresenceRequest.
       response: A PresenceResponse.
     """
-    jid = request.jid()
     self._GetFrom(request.from_jid())
-    if jid[0] < 'm':
-      response.set_is_available(True)
-    else:
-      response.set_is_available(False)
+    self._FillInPresenceResponse(request.jid(), response)
+
+  def _Dynamic_BulkGetPresence(self, request, response):
+    self._GetFrom(request.from_jid())
+    for jid in request.jid_list():
+      subresponse = response.add_presence_response()
+      self._FillInPresenceResponse(jid, subresponse)
+
+  def _FillInPresenceResponse(self, jid, response):
+    """Arbitrarily fill in a presence response or subresponse."""
+    response.set_is_available(jid[0] < 'm')
+    response.set_valid(self._ValidateJid(jid))
+    response.set_presence(1)
 
   def _Dynamic_SendMessage(self, request, response):
     """Implementation of XmppService::SendMessage.
@@ -79,21 +93,26 @@ class XmppServiceStub(apiproxy_stub.APIProxyStub):
       response: An XmppMessageResponse .
     """
     from_jid = self._GetFrom(request.from_jid())
-    self.log('Sending an XMPP Message:')
-    self.log('    From:')
-    self.log('       ' + from_jid)
-    self.log('    Body:')
-    self.log('       ' + request.body())
-    self.log('    Type:')
-    self.log('       ' + request.type())
-    self.log('    Raw Xml:')
-    self.log('       ' + str(request.raw_xml()))
-    self.log('    To JIDs:')
+    log_message = []
+    log_message.append('Sending an XMPP Message:')
+    log_message.append('    From:')
+    log_message.append('       ' + from_jid)
+    log_message.append('    Body:')
+    log_message.append('       ' + request.body())
+    log_message.append('    Type:')
+    log_message.append('       ' + request.type())
+    log_message.append('    Raw Xml:')
+    log_message.append('       ' + str(request.raw_xml()))
+    log_message.append('    To JIDs:')
     for jid in request.jid_list():
-      self.log('       ' + jid)
+      log_message.append('       ' + jid)
+    self.log('\n'.join(log_message))
 
     for jid in request.jid_list():
-      response.add_status(xmpp_service_pb.XmppMessageResponse.NO_ERROR)
+      if self._ValidateJid(jid):
+        response.add_status(xmpp_service_pb.XmppMessageResponse.NO_ERROR)
+      else:
+        response.add_status(xmpp_service_pb.XmppMessageResponse.INVALID_JID)
 
   def _Dynamic_SendInvite(self, request, response):
     """Implementation of XmppService::SendInvite.
@@ -103,10 +122,13 @@ class XmppServiceStub(apiproxy_stub.APIProxyStub):
       response: An XmppInviteResponse .
     """
     from_jid = self._GetFrom(request.from_jid())
-    self.log('Sending an XMPP Invite:')
-    self.log('    From:')
-    self.log('       ' + from_jid)
-    self.log('    To: ' + request.jid())
+    self._ParseJid(request.jid())
+    log_message = []
+    log_message.append('Sending an XMPP Invite:')
+    log_message.append('    From:')
+    log_message.append('       ' + from_jid)
+    log_message.append('    To: ' + request.jid())
+    self.log('\n'.join(log_message))
 
   def _Dynamic_SendPresence(self, request, response):
     """Implementation of XmppService::SendPresence.
@@ -116,48 +138,65 @@ class XmppServiceStub(apiproxy_stub.APIProxyStub):
       response: An XmppSendPresenceResponse .
     """
     from_jid = self._GetFrom(request.from_jid())
-    self.log('Sending an XMPP Presence:')
-    self.log('    From:')
-    self.log('       ' + from_jid)
-    self.log('    To: ' + request.jid())
+    log_message = []
+    log_message.append('Sending an XMPP Presence:')
+    log_message.append('    From:')
+    log_message.append('       ' + from_jid)
+    log_message.append('    To: ' + request.jid())
     if request.type():
-      self.log('    Type: ' + request.type())
+      log_message.append('    Type: ' + request.type())
     if request.show():
-      self.log('    Show: ' + request.show())
+      log_message.append('    Show: ' + request.show())
     if request.status():
-      self.log('    Status: ' + request.status())
+      log_message.append('    Status: ' + request.status())
+    self.log('\n'.join(log_message))
 
-  def _GetFrom(self, requested):
-    """Validates that the from JID is valid.
+  def _ParseJid(self, jid):
+    """Parse the given JID.
+
+    Also tests that the given jid:
+
+      * Contains one and only one @.
+      * Has one or zero resources.
+      * Has a node.
+      * Does not contain any invalid characters.
 
     Args:
-      requested: The requested from JID.
+      jid: The JID to validate
 
     Returns:
-      string, The from JID.
+      A tuple (node, domain, resource) representing the JID.
 
     Raises:
-      xmpp.InvalidJidError if the requested JID is invalid.
+      apiproxy_errors.ApplicationError if the requested JID is invalid using the
+        criteria listed above.
     """
-
-    appid = app_identity.get_application_id()
-    if requested == None or requested == '':
-      return appid + '@appspot.com/bot'
-
+    if set(jid).intersection(INVALID_JID_CHARACTERS):
+      self.log('Invalid JID: characters "%s" not supported.  JID: %s',
+               INVALID_JID_CHARACTERS,
+               jid)
+      raise apiproxy_errors.ApplicationError(
+          xmpp_service_pb.XmppServiceError.INVALID_JID)
 
     node, domain, resource = ('', '', '')
-    at = requested.find('@')
+    at = jid.find('@')
     if at == -1:
-      self.log('Invalid From JID: No \'@\' character found. JID: %s', requested)
-      raise xmpp.InvalidJidError()
+      self.log('Invalid JID: No \'@\' character found. JID: %s', jid)
+      raise apiproxy_errors.ApplicationError(
+          xmpp_service_pb.XmppServiceError.INVALID_JID)
 
-    node = requested[:at]
-    rest = requested[at+1:]
+    node = jid[:at]
+    if not node:
+      self.log('Invalid JID: No node. JID: %s', jid)
+      raise apiproxy_errors.ApplicationError(
+          xmpp_service_pb.XmppServiceError.INVALID_JID)
 
+    rest = jid[at+1:]
     if rest.find('@') > -1:
-      self.log('Invalid From JID: Second \'@\' character found. JID: %s',
-               requested)
-      raise xmpp.InvalidJidError()
+      self.log('Invalid JID: Second \'@\' character found. JID: %s',
+               jid)
+      raise apiproxy_errors.ApplicationError(
+          xmpp_service_pb.XmppServiceError.INVALID_JID)
 
     slash = rest.find('/')
     if slash == -1:
@@ -168,15 +207,82 @@ class XmppServiceStub(apiproxy_stub.APIProxyStub):
       resource = rest[slash+1:]
 
     if resource.find('/') > -1:
-      self.log('Invalid From JID: Second \'/\' character found. JID: %s',
-               requested)
-      raise xmpp.InvalidJidError()
+      self.log('Invalid JID: Second \'/\' character found. JID: %s',
+               jid)
+      raise apiproxy_errors.ApplicationError(
+          xmpp_service_pb.XmppServiceError.INVALID_JID)
 
-    if domain == 'appspot.com' and node == appid:
+    return node, domain, resource
+
+  def _ValidateJid(self, jid):
+    """Validate the given JID using self._ParseJid."""
+    try:
+      self._ParseJid(jid)
+      return True
+    except apiproxy_errors.ApplicationError:
+      return False
+
+  def _GetFrom(self, requested):
+    """Validates that the from JID is valid.
+
+    The JID uses the display-app-id for all apps to simulate a common case
+    in production (alias === display-app-id).
+
+    Args:
+      requested: The requested from JID.
+
+    Returns:
+      string, The from JID.
+
+    Raises:
+      apiproxy_errors.ApplicationError if the requested JID is invalid.
+    """
+
+    full_appid = os.environ.get('APPLICATION_ID')
+    partition, _, display_app_id = (
+        app_identity.app_identity._ParseFullAppId(full_appid))
+    if requested == None or requested == '':
+      return display_app_id + '@appspot.com/bot'
+
+    node, domain, resource = self._ParseJid(requested)
+
+    if domain == 'appspot.com' and node == display_app_id:
       return node + '@' + domain + '/' + resource
-    elif domain == appid + '.appspotchat.com':
+    elif domain == display_app_id + '.appspotchat.com':
       return node + '@' + domain + '/' + resource
 
     self.log('Invalid From JID: Must be appid@appspot.com[/resource] or '
              'node@appid.appspotchat.com[/resource]. JID: %s', requested)
-    raise xmpp.InvalidJidError()
+    raise apiproxy_errors.ApplicationError(
+        xmpp_service_pb.XmppServiceError.INVALID_JID)
+
+  def _Dynamic_CreateChannel(self, request, response):
+    """Implementation of XmppService::CreateChannel.
+
+    Args:
+      request: A CreateChannelRequest.
+      response: A CreateChannelResponse.
+    """
+    log_message = []
+    log_message.append('Sending a Create Channel:')
+    log_message.append('    Client ID:')
+    log_message.append('       ' + request.application_key())
+    if request.duration_minutes():
+      log_message.append('    Duration minutes: ' +
+                         str(request.duration_minutes()))
+    self.log('\n'.join(log_message))
+
+  def _Dynamic_SendChannelMessage(self, request, response):
+    """Implementation of XmppService::SendChannelMessage.
+
+    Args:
+      request: A SendMessageRequest.
+      response: A SendMessageRequest.
+    """
+    log_message = []
+    log_message.append('Sending a Channel Message:')
+    log_message.append('    Client ID:')
+    log_message.append('       ' + request.application_key())
+    log_message.append('    Message:')
+    log_message.append('       ' + str(request.message()))
+    self.log('\n'.join(log_message))

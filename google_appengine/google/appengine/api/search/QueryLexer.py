@@ -25,57 +25,54 @@ from google.appengine._internal.antlr3.compat import set, frozenset
 HIDDEN = BaseRecognizer.HIDDEN
 
 
-LT=19
-EXPONENT=36
-LETTER=40
-FUZZY=6
-OCTAL_ESC=44
-FLOAT=27
-NAME_START=38
-NOT=33
-AND=31
+FUNCTION=7
+GEO_POINT_FN=29
+FIX=30
+ESC=34
+OCTAL_ESC=36
+FUZZY=8
+NOT=27
+DISTANCE_FN=28
+AND=25
+ESCAPED_CHAR=40
 EOF=-1
-LPAREN=25
-WORD=14
-HAS=7
-RPAREN=26
-NAME=16
-ESC_SEQ=37
-DIGIT=34
-EQ=23
-DOT=35
-NE=22
-GE=20
-T__46=46
-T__47=47
+LPAREN=23
+HAS=22
+CHAR_SEQ=37
+QUOTE=33
+RPAREN=24
+START_CHAR=41
+ARGS=4
+DIGIT=38
+EQ=21
+NE=20
+T__43=43
+LESSTHAN=17
+GE=18
+T__44=44
 T__45=45
-T__48=48
-CONJUNCTION=4
-UNICODE_ESC=43
-NAME_MID=39
-NUMBER=11
+CONJUNCTION=5
+UNICODE_ESC=35
 HEX_DIGIT=42
-UNDERSCORE=41
-LITERAL=8
-INT=28
-VALUE=15
-TEXT=30
-PHRASE=29
-RESTRICTION=12
-COLON=24
-DISJUNCTION=5
-WS=17
-NEGATION=9
-OR=32
-GT=21
-GLOBAL=10
-LE=18
-STRING=13
+LITERAL=10
+VALUE=14
+TEXT=32
+REWRITE=31
+SEQUENCE=13
+DISJUNCTION=6
+WS=15
+NEGATION=11
+OR=26
+GT=19
+GLOBAL=9
+LE=16
+MID_CHAR=39
+STRING=12
 
 
 class QueryLexer(Lexer):
 
-    grammarFileName = "blaze-out/host/genfiles/apphosting/api/search/genantlr/Query.g"
+    grammarFileName = ""
     antlr_version = version_str_to_tuple("3.1.1")
     antlr_version_str = "3.1.1"
 
@@ -95,15 +92,15 @@ class QueryLexer(Lexer):
             transition = self.DFA8_transition
             )
 
-        self.dfa16 = self.DFA16(
-            self, 16,
-            eot = self.DFA16_eot,
-            eof = self.DFA16_eof,
-            min = self.DFA16_min,
-            max = self.DFA16_max,
-            accept = self.DFA16_accept,
-            special = self.DFA16_special,
-            transition = self.DFA16_transition
+        self.dfa9 = self.DFA9(
+            self, 9,
+            eot = self.DFA9_eot,
+            eof = self.DFA9_eof,
+            min = self.DFA9_min,
+            max = self.DFA9_max,
+            accept = self.DFA9_accept,
+            special = self.DFA9_special,
+            transition = self.DFA9_transition
             )
 
 
@@ -112,60 +109,10 @@ class QueryLexer(Lexer):
 
 
 
-    def mT__45(self, ):
+    def mT__43(self, ):
 
         try:
-            _type = T__45
-            _channel = DEFAULT_CHANNEL
-
-
-
-            pass
-            self.match(43)
-
-
-
-            self._state.type = _type
-            self._state.channel = _channel
-
-        finally:
-
-            pass
-
-
-
-
-
-
-    def mT__46(self, ):
-
-        try:
-            _type = T__46
-            _channel = DEFAULT_CHANNEL
-
-
-
-            pass
-            self.match(126)
-
-
-
-            self._state.type = _type
-            self._state.channel = _channel
-
-        finally:
-
-            pass
-
-
-
-
-
-
-    def mT__47(self, ):
-
-        try:
-            _type = T__47
+            _type = T__43
             _channel = DEFAULT_CHANNEL
 
 
@@ -187,16 +134,66 @@ class QueryLexer(Lexer):
 
 
 
-    def mT__48(self, ):
+    def mT__44(self, ):
 
         try:
-            _type = T__48
+            _type = T__44
             _channel = DEFAULT_CHANNEL
 
 
 
             pass
             self.match(44)
+
+
+
+            self._state.type = _type
+            self._state.channel = _channel
+
+        finally:
+
+            pass
+
+
+
+
+
+
+    def mT__45(self, ):
+
+        try:
+            _type = T__45
+            _channel = DEFAULT_CHANNEL
+
+
+
+            pass
+            self.match(92)
+
+
+
+            self._state.type = _type
+            self._state.channel = _channel
+
+        finally:
+
+            pass
+
+
+
+
+
+
+    def mHAS(self, ):
+
+        try:
+            _type = HAS
+            _channel = DEFAULT_CHANNEL
+
+
+
+            pass
+            self.match(58)
 
 
 
@@ -287,229 +284,157 @@ class QueryLexer(Lexer):
 
 
 
-    def mINT(self, ):
+    def mREWRITE(self, ):
 
         try:
-            _type = INT
+            _type = REWRITE
             _channel = DEFAULT_CHANNEL
 
 
 
             pass
+            self.match(126)
 
-            cnt1 = 0
-            while True:
-                alt1 = 2
-                LA1_0 = self.input.LA(1)
 
-                if ((48 <= LA1_0 <= 57)) :
+
+            self._state.type = _type
+            self._state.channel = _channel
+
+        finally:
+
+            pass
+
+
+
+
+
+
+    def mFIX(self, ):
+
+        try:
+            _type = FIX
+            _channel = DEFAULT_CHANNEL
+
+
+
+            pass
+            self.match(43)
+
+
+
+            self._state.type = _type
+            self._state.channel = _channel
+
+        finally:
+
+            pass
+
+
+
+
+
+
+    def mDISTANCE_FN(self, ):
+
+        try:
+            _type = DISTANCE_FN
+            _channel = DEFAULT_CHANNEL
+
+
+
+            pass
+            self.match("distance")
+
+
+
+            self._state.type = _type
+            self._state.channel = _channel
+
+        finally:
+
+            pass
+
+
+
+
+
+
+    def mGEO_POINT_FN(self, ):
+
+        try:
+            _type = GEO_POINT_FN
+            _channel = DEFAULT_CHANNEL
+
+
+
+            pass
+            self.match("geopoint")
+
+
+
+            self._state.type = _type
+            self._state.channel = _channel
+
+        finally:
+
+            pass
+
+
+
+
+
+
+    def mESC(self, ):
+
+        try:
+            _type = ESC
+            _channel = DEFAULT_CHANNEL
+
+
+            alt1 = 3
+            LA1_0 = self.input.LA(1)
+
+            if (LA1_0 == 92) :
+                LA1 = self.input.LA(2)
+                if LA1 == 34 or LA1 == 92:
                     alt1 = 1
-
-
-                if alt1 == 1:
-
-                    pass
-                    self.mDIGIT()
-
-
+                elif LA1 == 117:
+                    alt1 = 2
+                elif LA1 == 48 or LA1 == 49 or LA1 == 50 or LA1 == 51 or LA1 == 52 or LA1 == 53 or LA1 == 54 or LA1 == 55:
+                    alt1 = 3
                 else:
-                    if cnt1 >= 1:
-                        break
+                    nvae = NoViableAltException("", 1, 1, self.input)
 
-                    eee = EarlyExitException(1, self.input)
-                    raise eee
+                    raise nvae
 
-                cnt1 += 1
+            else:
+                nvae = NoViableAltException("", 1, 0, self.input)
 
+                raise nvae
 
-
-
-
-            self._state.type = _type
-            self._state.channel = _channel
-
-        finally:
-
-            pass
-
-
-
-
-
-
-    def mCOLON(self, ):
-
-        try:
-            _type = COLON
-            _channel = DEFAULT_CHANNEL
-
-
-
-            pass
-            self.match(58)
-
-
-
-            self._state.type = _type
-            self._state.channel = _channel
-
-        finally:
-
-            pass
-
-
-
-
-
-
-    def mFLOAT(self, ):
-
-        try:
-            _type = FLOAT
-            _channel = DEFAULT_CHANNEL
-
-
-            alt8 = 3
-            alt8 = self.dfa8.predict(self.input)
-            if alt8 == 1:
+            if alt1 == 1:
 
                 pass
-
-                cnt2 = 0
-                while True:
-                    alt2 = 2
-                    LA2_0 = self.input.LA(1)
-
-                    if ((48 <= LA2_0 <= 57)) :
-                        alt2 = 1
-
-
-                    if alt2 == 1:
-
-                        pass
-                        self.mDIGIT()
-
-
-                    else:
-                        if cnt2 >= 1:
-                            break
-
-                        eee = EarlyExitException(2, self.input)
-                        raise eee
-
-                    cnt2 += 1
-
-
-                self.mDOT()
-
-                while True:
-                    alt3 = 2
-                    LA3_0 = self.input.LA(1)
-
-                    if ((48 <= LA3_0 <= 57)) :
-                        alt3 = 1
-
-
-                    if alt3 == 1:
-
-                        pass
-                        self.mDIGIT()
-
-
-                    else:
-                        break
+                self.match(92)
+                if self.input.LA(1) == 34 or self.input.LA(1) == 92:
+                    self.input.consume()
+                else:
+                    mse = MismatchedSetException(None, self.input)
+                    self.recover(mse)
+                    raise mse
 
 
 
-                alt4 = 2
-                LA4_0 = self.input.LA(1)
-
-                if (LA4_0 == 69 or LA4_0 == 101) :
-                    alt4 = 1
-                if alt4 == 1:
-
-                    pass
-                    self.mEXPONENT()
-
-
-
-
-
-            elif alt8 == 2:
+            elif alt1 == 2:
 
                 pass
-                self.mDOT()
-
-                cnt5 = 0
-                while True:
-                    alt5 = 2
-                    LA5_0 = self.input.LA(1)
-
-                    if ((48 <= LA5_0 <= 57)) :
-                        alt5 = 1
+                self.mUNICODE_ESC()
 
 
-                    if alt5 == 1:
-
-                        pass
-                        self.mDIGIT()
-
-
-                    else:
-                        if cnt5 >= 1:
-                            break
-
-                        eee = EarlyExitException(5, self.input)
-                        raise eee
-
-                    cnt5 += 1
-
-
-
-                alt6 = 2
-                LA6_0 = self.input.LA(1)
-
-                if (LA6_0 == 69 or LA6_0 == 101) :
-                    alt6 = 1
-                if alt6 == 1:
-
-                    pass
-                    self.mEXPONENT()
-
-
-
-
-
-            elif alt8 == 3:
+            elif alt1 == 3:
 
                 pass
-
-                cnt7 = 0
-                while True:
-                    alt7 = 2
-                    LA7_0 = self.input.LA(1)
-
-                    if ((48 <= LA7_0 <= 57)) :
-                        alt7 = 1
-
-
-                    if alt7 == 1:
-
-                        pass
-                        self.mDIGIT()
-
-
-                    else:
-                        if cnt7 >= 1:
-                            break
-
-                        eee = EarlyExitException(7, self.input)
-                        raise eee
-
-                    cnt7 += 1
-
-
-                self.mEXPONENT()
+                self.mOCTAL_ESC()
 
 
             self._state.type = _type
@@ -533,115 +458,12 @@ class QueryLexer(Lexer):
 
 
             pass
-            if (9 <= self.input.LA(1) <= 10) or self.input.LA(1) == 13 or self.input.LA(1) == 32:
+            if (9 <= self.input.LA(1) <= 10) or (12 <= self.input.LA(1) <= 13) or self.input.LA(1) == 32:
                 self.input.consume()
             else:
                 mse = MismatchedSetException(None, self.input)
                 self.recover(mse)
                 raise mse
-
-
-
-
-            self._state.type = _type
-            self._state.channel = _channel
-
-        finally:
-
-            pass
-
-
-
-
-
-
-    def mPHRASE(self, ):
-
-        try:
-            _type = PHRASE
-            _channel = DEFAULT_CHANNEL
-
-
-
-            pass
-            self.match(34)
-
-            while True:
-                alt9 = 3
-                LA9_0 = self.input.LA(1)
-
-                if (LA9_0 == 92) :
-                    alt9 = 1
-                elif ((0 <= LA9_0 <= 33) or (35 <= LA9_0 <= 91) or (93 <= LA9_0 <= 65535)) :
-                    alt9 = 2
-
-
-                if alt9 == 1:
-
-                    pass
-                    self.mESC_SEQ()
-
-
-                elif alt9 == 2:
-
-                    pass
-                    if (0 <= self.input.LA(1) <= 33) or (35 <= self.input.LA(1) <= 91) or (93 <= self.input.LA(1) <= 65535):
-                        self.input.consume()
-                    else:
-                        mse = MismatchedSetException(None, self.input)
-                        self.recover(mse)
-                        raise mse
-
-
-
-                else:
-                    break
-
-
-            self.match(34)
-
-
-
-            self._state.type = _type
-            self._state.channel = _channel
-
-        finally:
-
-            pass
-
-
-
-
-
-
-    def mNAME(self, ):
-
-        try:
-            _type = NAME
-            _channel = DEFAULT_CHANNEL
-
-
-
-            pass
-            self.mNAME_START()
-
-            while True:
-                alt10 = 2
-                LA10_0 = self.input.LA(1)
-
-                if ((48 <= LA10_0 <= 57) or (65 <= LA10_0 <= 90) or LA10_0 == 95 or (97 <= LA10_0 <= 122) or (192 <= LA10_0 <= 214) or (216 <= LA10_0 <= 246) or (248 <= LA10_0 <= 8191) or (12352 <= LA10_0 <= 12687) or (13056 <= LA10_0 <= 13183) or (13312 <= LA10_0 <= 15661) or (19968 <= LA10_0 <= 40959) or (63744 <= LA10_0 <= 64255)) :
-                    alt10 = 1
-
-
-                if alt10 == 1:
-
-                    pass
-                    self.mNAME_MID()
-
-
-                else:
-                    break
-
 
 
 
@@ -708,10 +530,10 @@ class QueryLexer(Lexer):
 
 
 
-    def mLT(self, ):
+    def mLESSTHAN(self, ):
 
         try:
-            _type = LT
+            _type = LESSTHAN
             _channel = DEFAULT_CHANNEL
 
 
@@ -858,6 +680,31 @@ class QueryLexer(Lexer):
 
 
 
+    def mQUOTE(self, ):
+
+        try:
+            _type = QUOTE
+            _channel = DEFAULT_CHANNEL
+
+
+
+            pass
+            self.match(34)
+
+
+
+            self._state.type = _type
+            self._state.channel = _channel
+
+        finally:
+
+            pass
+
+
+
+
+
+
     def mTEXT(self, ):
 
         try:
@@ -865,39 +712,85 @@ class QueryLexer(Lexer):
             _channel = DEFAULT_CHANNEL
 
 
+            alt4 = 2
+            LA4_0 = self.input.LA(1)
 
-            pass
-            if self.input.LA(1) == 33 or (35 <= self.input.LA(1) <= 39) or self.input.LA(1) == 44 or (46 <= self.input.LA(1) <= 57) or self.input.LA(1) == 59 or (63 <= self.input.LA(1) <= 125) or (256 <= self.input.LA(1) <= 32767):
-                self.input.consume()
+            if (LA4_0 == 33 or (35 <= LA4_0 <= 39) or LA4_0 == 42 or (46 <= LA4_0 <= 47) or LA4_0 == 59 or (63 <= LA4_0 <= 125) or (161 <= LA4_0 <= 65518)) :
+                alt4 = 1
+            elif (LA4_0 == 45 or (48 <= LA4_0 <= 57)) :
+                alt4 = 2
             else:
-                mse = MismatchedSetException(None, self.input)
-                self.recover(mse)
-                raise mse
+                nvae = NoViableAltException("", 4, 0, self.input)
+
+                raise nvae
+
+            if alt4 == 1:
+
+                pass
+                self.mCHAR_SEQ()
 
 
-            while True:
-                alt11 = 2
-                LA11_0 = self.input.LA(1)
+            elif alt4 == 2:
 
-                if (LA11_0 == 33 or (35 <= LA11_0 <= 39) or (44 <= LA11_0 <= 57) or LA11_0 == 59 or (63 <= LA11_0 <= 125) or (256 <= LA11_0 <= 32767)) :
-                    alt11 = 1
+                pass
 
+                alt2 = 2
+                LA2_0 = self.input.LA(1)
 
-                if alt11 == 1:
+                if (LA2_0 == 45) :
+                    alt2 = 1
+                if alt2 == 1:
 
                     pass
-                    if self.input.LA(1) == 33 or (35 <= self.input.LA(1) <= 39) or (44 <= self.input.LA(1) <= 57) or self.input.LA(1) == 59 or (63 <= self.input.LA(1) <= 125) or (256 <= self.input.LA(1) <= 32767):
-                        self.input.consume()
+                    self.match(45)
+
+
+
+                self.mDIGIT()
+
+                while True:
+                    alt3 = 5
+                    LA3_0 = self.input.LA(1)
+
+                    if (LA3_0 == 33 or (35 <= LA3_0 <= 39) or (42 <= LA3_0 <= 43) or (45 <= LA3_0 <= 57) or LA3_0 == 59 or (63 <= LA3_0 <= 91) or (93 <= LA3_0 <= 125) or (161 <= LA3_0 <= 65518)) :
+                        alt3 = 1
+                    elif (LA3_0 == 92) :
+                        LA3 = self.input.LA(2)
+                        if LA3 == 34 or LA3 == 43 or LA3 == 44 or LA3 == 58 or LA3 == 60 or LA3 == 61 or LA3 == 62 or LA3 == 92 or LA3 == 126:
+                            alt3 = 2
+                        elif LA3 == 117:
+                            alt3 = 3
+                        elif LA3 == 48 or LA3 == 49 or LA3 == 50 or LA3 == 51 or LA3 == 52 or LA3 == 53 or LA3 == 54 or LA3 == 55:
+                            alt3 = 4
+
+
+
+                    if alt3 == 1:
+
+                        pass
+                        self.mMID_CHAR()
+
+
+                    elif alt3 == 2:
+
+                        pass
+                        self.mESCAPED_CHAR()
+
+
+                    elif alt3 == 3:
+
+                        pass
+                        self.mUNICODE_ESC()
+
+
+                    elif alt3 == 4:
+
+                        pass
+                        self.mOCTAL_ESC()
+
+
                     else:
-                        mse = MismatchedSetException(None, self.input)
-                        self.recover(mse)
-                        raise mse
-
-
-
-                else:
-                    break
-
+                        break
 
 
 
@@ -914,395 +807,105 @@ class QueryLexer(Lexer):
 
 
 
-    def mNAME_START(self, ):
+    def mCHAR_SEQ(self, ):
 
         try:
 
 
             pass
-            if (65 <= self.input.LA(1) <= 90) or self.input.LA(1) == 95 or (97 <= self.input.LA(1) <= 122) or (192 <= self.input.LA(1) <= 214) or (216 <= self.input.LA(1) <= 246) or (248 <= self.input.LA(1) <= 8191) or (12352 <= self.input.LA(1) <= 12687) or (13056 <= self.input.LA(1) <= 13183) or (13312 <= self.input.LA(1) <= 15661) or (19968 <= self.input.LA(1) <= 40959) or (63744 <= self.input.LA(1) <= 64255):
-                self.input.consume()
-            else:
-                mse = MismatchedSetException(None, self.input)
-                self.recover(mse)
-                raise mse
 
-
-
-
-
-        finally:
-
-            pass
-
-
-
-
-
-
-    def mNAME_MID(self, ):
-
-        try:
-
-
-            pass
-            if (48 <= self.input.LA(1) <= 57) or (65 <= self.input.LA(1) <= 90) or self.input.LA(1) == 95 or (97 <= self.input.LA(1) <= 122) or (192 <= self.input.LA(1) <= 214) or (216 <= self.input.LA(1) <= 246) or (248 <= self.input.LA(1) <= 8191) or (12352 <= self.input.LA(1) <= 12687) or (13056 <= self.input.LA(1) <= 13183) or (13312 <= self.input.LA(1) <= 15661) or (19968 <= self.input.LA(1) <= 40959) or (63744 <= self.input.LA(1) <= 64255):
-                self.input.consume()
-            else:
-                mse = MismatchedSetException(None, self.input)
-                self.recover(mse)
-                raise mse
-
-
-
-
-
-        finally:
-
-            pass
-
-
-
-
-
-
-    def mLETTER(self, ):
-
-        try:
-
-
-            pass
-            if (65 <= self.input.LA(1) <= 90) or (97 <= self.input.LA(1) <= 122) or (192 <= self.input.LA(1) <= 214) or (216 <= self.input.LA(1) <= 246) or (248 <= self.input.LA(1) <= 8191) or (12352 <= self.input.LA(1) <= 12687) or (13056 <= self.input.LA(1) <= 13183) or (13312 <= self.input.LA(1) <= 15661) or (19968 <= self.input.LA(1) <= 40959) or (63744 <= self.input.LA(1) <= 64255):
-                self.input.consume()
-            else:
-                mse = MismatchedSetException(None, self.input)
-                self.recover(mse)
-                raise mse
-
-
-
-
-
-        finally:
-
-            pass
-
-
-
-
-
-
-    def mDIGIT(self, ):
-
-        try:
-
-
-            pass
-            self.matchRange(48, 57)
-
-
-
-
-        finally:
-
-            pass
-
-
-
-
-
-
-    def mDOT(self, ):
-
-        try:
-
-
-            pass
-            self.match(46)
-
-
-
-
-        finally:
-
-            pass
-
-
-
-
-
-
-    def mUNDERSCORE(self, ):
-
-        try:
-
-
-            pass
-            self.match(95)
-
-
-
-
-        finally:
-
-            pass
-
-
-
-
-
-
-    def mEXPONENT(self, ):
-
-        try:
-
-
-            pass
-            if self.input.LA(1) == 69 or self.input.LA(1) == 101:
-                self.input.consume()
-            else:
-                mse = MismatchedSetException(None, self.input)
-                self.recover(mse)
-                raise mse
-
-
-            alt12 = 2
-            LA12_0 = self.input.LA(1)
-
-            if (LA12_0 == 43 or LA12_0 == 45) :
-                alt12 = 1
-            if alt12 == 1:
-
-                pass
-                if self.input.LA(1) == 43 or self.input.LA(1) == 45:
-                    self.input.consume()
+            alt5 = 4
+            LA5_0 = self.input.LA(1)
+
+            if (LA5_0 == 33 or (35 <= LA5_0 <= 39) or LA5_0 == 42 or (46 <= LA5_0 <= 47) or LA5_0 == 59 or (63 <= LA5_0 <= 91) or (93 <= LA5_0 <= 125) or (161 <= LA5_0 <= 65518)) :
+                alt5 = 1
+            elif (LA5_0 == 92) :
+                LA5 = self.input.LA(2)
+                if LA5 == 34 or LA5 == 43 or LA5 == 44 or LA5 == 58 or LA5 == 60 or LA5 == 61 or LA5 == 62 or LA5 == 92 or LA5 == 126:
+                    alt5 = 2
+                elif LA5 == 117:
+                    alt5 = 3
+                elif LA5 == 48 or LA5 == 49 or LA5 == 50 or LA5 == 51 or LA5 == 52 or LA5 == 53 or LA5 == 54 or LA5 == 55:
+                    alt5 = 4
                 else:
-                    mse = MismatchedSetException(None, self.input)
-                    self.recover(mse)
-                    raise mse
-
-
-
-
-
-            cnt13 = 0
-            while True:
-                alt13 = 2
-                LA13_0 = self.input.LA(1)
-
-                if ((48 <= LA13_0 <= 57)) :
-                    alt13 = 1
-
-
-                if alt13 == 1:
-
-                    pass
-                    self.matchRange(48, 57)
-
-
-                else:
-                    if cnt13 >= 1:
-                        break
-
-                    eee = EarlyExitException(13, self.input)
-                    raise eee
-
-                cnt13 += 1
-
-
-
-
-
-
-        finally:
-
-            pass
-
-
-
-
-
-
-    def mHEX_DIGIT(self, ):
-
-        try:
-
-
-            pass
-            if (48 <= self.input.LA(1) <= 57) or (65 <= self.input.LA(1) <= 70) or (97 <= self.input.LA(1) <= 102):
-                self.input.consume()
-            else:
-                mse = MismatchedSetException(None, self.input)
-                self.recover(mse)
-                raise mse
-
-
-
-
-
-        finally:
-
-            pass
-
-
-
-
-
-
-    def mESC_SEQ(self, ):
-
-        try:
-
-            alt14 = 3
-            LA14_0 = self.input.LA(1)
-
-            if (LA14_0 == 92) :
-                LA14 = self.input.LA(2)
-                if LA14 == 34 or LA14 == 39 or LA14 == 92 or LA14 == 98 or LA14 == 102 or LA14 == 110 or LA14 == 114 or LA14 == 116:
-                    alt14 = 1
-                elif LA14 == 117:
-                    alt14 = 2
-                elif LA14 == 48 or LA14 == 49 or LA14 == 50 or LA14 == 51 or LA14 == 52 or LA14 == 53 or LA14 == 54 or LA14 == 55:
-                    alt14 = 3
-                else:
-                    nvae = NoViableAltException("", 14, 1, self.input)
+                    nvae = NoViableAltException("", 5, 2, self.input)
 
                     raise nvae
 
             else:
-                nvae = NoViableAltException("", 14, 0, self.input)
+                nvae = NoViableAltException("", 5, 0, self.input)
 
                 raise nvae
 
-            if alt14 == 1:
+            if alt5 == 1:
 
                 pass
-                self.match(92)
-                if self.input.LA(1) == 34 or self.input.LA(1) == 39 or self.input.LA(1) == 92 or self.input.LA(1) == 98 or self.input.LA(1) == 102 or self.input.LA(1) == 110 or self.input.LA(1) == 114 or self.input.LA(1) == 116:
-                    self.input.consume()
-                else:
-                    mse = MismatchedSetException(None, self.input)
-                    self.recover(mse)
-                    raise mse
+                self.mSTART_CHAR()
 
 
+            elif alt5 == 2:
 
-            elif alt14 == 2:
+                pass
+                self.mESCAPED_CHAR()
+
+
+            elif alt5 == 3:
 
                 pass
                 self.mUNICODE_ESC()
 
 
-            elif alt14 == 3:
+            elif alt5 == 4:
 
                 pass
                 self.mOCTAL_ESC()
 
 
 
-        finally:
 
-            pass
+            while True:
+                alt6 = 5
+                LA6_0 = self.input.LA(1)
+
+                if (LA6_0 == 33 or (35 <= LA6_0 <= 39) or (42 <= LA6_0 <= 43) or (45 <= LA6_0 <= 57) or LA6_0 == 59 or (63 <= LA6_0 <= 91) or (93 <= LA6_0 <= 125) or (161 <= LA6_0 <= 65518)) :
+                    alt6 = 1
+                elif (LA6_0 == 92) :
+                    LA6 = self.input.LA(2)
+                    if LA6 == 34 or LA6 == 43 or LA6 == 44 or LA6 == 58 or LA6 == 60 or LA6 == 61 or LA6 == 62 or LA6 == 92 or LA6 == 126:
+                        alt6 = 2
+                    elif LA6 == 117:
+                        alt6 = 3
+                    elif LA6 == 48 or LA6 == 49 or LA6 == 50 or LA6 == 51 or LA6 == 52 or LA6 == 53 or LA6 == 54 or LA6 == 55:
+                        alt6 = 4
 
 
 
+                if alt6 == 1:
+
+                    pass
+                    self.mMID_CHAR()
 
 
+                elif alt6 == 2:
 
-    def mOCTAL_ESC(self, ):
+                    pass
+                    self.mESCAPED_CHAR()
 
-        try:
 
-            alt15 = 3
-            LA15_0 = self.input.LA(1)
+                elif alt6 == 3:
 
-            if (LA15_0 == 92) :
-                LA15_1 = self.input.LA(2)
+                    pass
+                    self.mUNICODE_ESC()
 
-                if ((48 <= LA15_1 <= 51)) :
-                    LA15_2 = self.input.LA(3)
 
-                    if ((48 <= LA15_2 <= 55)) :
-                        LA15_4 = self.input.LA(4)
+                elif alt6 == 4:
 
-                        if ((48 <= LA15_4 <= 55)) :
-                            alt15 = 1
-                        else:
-                            alt15 = 2
-                    else:
-                        alt15 = 3
-                elif ((52 <= LA15_1 <= 55)) :
-                    LA15_3 = self.input.LA(3)
+                    pass
+                    self.mOCTAL_ESC()
 
-                    if ((48 <= LA15_3 <= 55)) :
-                        alt15 = 2
-                    else:
-                        alt15 = 3
+
                 else:
-                    nvae = NoViableAltException("", 15, 1, self.input)
-
-                    raise nvae
-
-            else:
-                nvae = NoViableAltException("", 15, 0, self.input)
-
-                raise nvae
-
-            if alt15 == 1:
-
-                pass
-                self.match(92)
-
-
-                pass
-                self.matchRange(48, 51)
-
-
-
-
-
-                pass
-                self.matchRange(48, 55)
-
-
-
-
-
-                pass
-                self.matchRange(48, 55)
-
-
-
-
-
-            elif alt15 == 2:
-
-                pass
-                self.match(92)
-
-
-                pass
-                self.matchRange(48, 55)
-
-
-
-
-
-                pass
-                self.matchRange(48, 55)
-
-
-
-
-
-            elif alt15 == 3:
-
-                pass
-                self.match(92)
-
-
-                pass
-                self.matchRange(48, 55)
+                    break
 
 
 
@@ -1342,137 +945,420 @@ class QueryLexer(Lexer):
 
 
 
+
+    def mOCTAL_ESC(self, ):
+
+        try:
+
+            alt7 = 3
+            LA7_0 = self.input.LA(1)
+
+            if (LA7_0 == 92) :
+                LA7_1 = self.input.LA(2)
+
+                if ((48 <= LA7_1 <= 51)) :
+                    LA7_2 = self.input.LA(3)
+
+                    if ((48 <= LA7_2 <= 55)) :
+                        LA7_4 = self.input.LA(4)
+
+                        if ((48 <= LA7_4 <= 55)) :
+                            alt7 = 1
+                        else:
+                            alt7 = 2
+                    else:
+                        alt7 = 3
+                elif ((52 <= LA7_1 <= 55)) :
+                    LA7_3 = self.input.LA(3)
+
+                    if ((48 <= LA7_3 <= 55)) :
+                        alt7 = 2
+                    else:
+                        alt7 = 3
+                else:
+                    nvae = NoViableAltException("", 7, 1, self.input)
+
+                    raise nvae
+
+            else:
+                nvae = NoViableAltException("", 7, 0, self.input)
+
+                raise nvae
+
+            if alt7 == 1:
+
+                pass
+                self.match(92)
+
+
+                pass
+                self.matchRange(48, 51)
+
+
+
+
+
+                pass
+                self.matchRange(48, 55)
+
+
+
+
+
+                pass
+                self.matchRange(48, 55)
+
+
+
+
+
+            elif alt7 == 2:
+
+                pass
+                self.match(92)
+
+
+                pass
+                self.matchRange(48, 55)
+
+
+
+
+
+                pass
+                self.matchRange(48, 55)
+
+
+
+
+
+            elif alt7 == 3:
+
+                pass
+                self.match(92)
+
+
+                pass
+                self.matchRange(48, 55)
+
+
+
+
+
+
+        finally:
+
+            pass
+
+
+
+
+
+
+    def mDIGIT(self, ):
+
+        try:
+
+
+            pass
+            self.matchRange(48, 57)
+
+
+
+
+        finally:
+
+            pass
+
+
+
+
+
+
+    def mHEX_DIGIT(self, ):
+
+        try:
+
+
+            pass
+            if (48 <= self.input.LA(1) <= 57) or (65 <= self.input.LA(1) <= 70) or (97 <= self.input.LA(1) <= 102):
+                self.input.consume()
+            else:
+                mse = MismatchedSetException(None, self.input)
+                self.recover(mse)
+                raise mse
+
+
+
+
+
+        finally:
+
+            pass
+
+
+
+
+
+
+    def mSTART_CHAR(self, ):
+
+        try:
+
+
+            pass
+            if self.input.LA(1) == 33 or (35 <= self.input.LA(1) <= 39) or self.input.LA(1) == 42 or (46 <= self.input.LA(1) <= 47) or self.input.LA(1) == 59 or (63 <= self.input.LA(1) <= 91) or (93 <= self.input.LA(1) <= 125) or (161 <= self.input.LA(1) <= 65518):
+                self.input.consume()
+            else:
+                mse = MismatchedSetException(None, self.input)
+                self.recover(mse)
+                raise mse
+
+
+
+
+
+        finally:
+
+            pass
+
+
+
+
+
+
+    def mMID_CHAR(self, ):
+
+        try:
+
+
+            pass
+            if self.input.LA(1) == 33 or (35 <= self.input.LA(1) <= 39) or (42 <= self.input.LA(1) <= 43) or (45 <= self.input.LA(1) <= 57) or self.input.LA(1) == 59 or (63 <= self.input.LA(1) <= 91) or (93 <= self.input.LA(1) <= 125) or (161 <= self.input.LA(1) <= 65518):
+                self.input.consume()
+            else:
+                mse = MismatchedSetException(None, self.input)
+                self.recover(mse)
+                raise mse
+
+
+
+
+
+        finally:
+
+            pass
+
+
+
+
+
+
+    def mESCAPED_CHAR(self, ):
+
+        try:
+
+            alt8 = 9
+            alt8 = self.dfa8.predict(self.input)
+            if alt8 == 1:
+
+                pass
+                self.match("\\,")
+
+
+            elif alt8 == 2:
+
+                pass
+                self.match("\\:")
+
+
+            elif alt8 == 3:
+
+                pass
+                self.match("\\=")
+
+
+            elif alt8 == 4:
+
+                pass
+                self.match("\\<")
+
+
+            elif alt8 == 5:
+
+                pass
+                self.match("\\>")
+
+
+            elif alt8 == 6:
+
+                pass
+                self.match("\\+")
+
+
+            elif alt8 == 7:
+
+                pass
+                self.match("\\~")
+
+
+            elif alt8 == 8:
+
+                pass
+                self.match("\\\"")
+
+
+            elif alt8 == 9:
+
+                pass
+                self.match("\\\\")
+
+
+
+        finally:
+
+            pass
+
+
+
+
+
     def mTokens(self):
 
-        alt16 = 22
-        alt16 = self.dfa16.predict(self.input)
-        if alt16 == 1:
+        alt9 = 23
+        alt9 = self.dfa9.predict(self.input)
+        if alt9 == 1:
+
+            pass
+            self.mT__43()
+
+
+        elif alt9 == 2:
+
+            pass
+            self.mT__44()
+
+
+        elif alt9 == 3:
 
             pass
             self.mT__45()
 
 
-        elif alt16 == 2:
+        elif alt9 == 4:
 
             pass
-            self.mT__46()
+            self.mHAS()
 
 
-        elif alt16 == 3:
-
-            pass
-            self.mT__47()
-
-
-        elif alt16 == 4:
-
-            pass
-            self.mT__48()
-
-
-        elif alt16 == 5:
+        elif alt9 == 5:
 
             pass
             self.mOR()
 
 
-        elif alt16 == 6:
+        elif alt9 == 6:
 
             pass
             self.mAND()
 
 
-        elif alt16 == 7:
+        elif alt9 == 7:
 
             pass
             self.mNOT()
 
 
-        elif alt16 == 8:
+        elif alt9 == 8:
 
             pass
-            self.mINT()
+            self.mREWRITE()
 
 
-        elif alt16 == 9:
-
-            pass
-            self.mCOLON()
-
-
-        elif alt16 == 10:
+        elif alt9 == 9:
 
             pass
-            self.mFLOAT()
+            self.mFIX()
 
 
-        elif alt16 == 11:
+        elif alt9 == 10:
+
+            pass
+            self.mDISTANCE_FN()
+
+
+        elif alt9 == 11:
+
+            pass
+            self.mGEO_POINT_FN()
+
+
+        elif alt9 == 12:
+
+            pass
+            self.mESC()
+
+
+        elif alt9 == 13:
 
             pass
             self.mWS()
 
 
-        elif alt16 == 12:
-
-            pass
-            self.mPHRASE()
-
-
-        elif alt16 == 13:
-
-            pass
-            self.mNAME()
-
-
-        elif alt16 == 14:
+        elif alt9 == 14:
 
             pass
             self.mLPAREN()
 
 
-        elif alt16 == 15:
+        elif alt9 == 15:
 
             pass
             self.mRPAREN()
 
 
-        elif alt16 == 16:
+        elif alt9 == 16:
 
             pass
-            self.mLT()
+            self.mLESSTHAN()
 
 
-        elif alt16 == 17:
+        elif alt9 == 17:
 
             pass
             self.mGT()
 
 
-        elif alt16 == 18:
+        elif alt9 == 18:
 
             pass
             self.mGE()
 
 
-        elif alt16 == 19:
+        elif alt9 == 19:
 
             pass
             self.mLE()
 
 
-        elif alt16 == 20:
+        elif alt9 == 20:
 
             pass
             self.mNE()
 
 
-        elif alt16 == 21:
+        elif alt9 == 21:
 
             pass
             self.mEQ()
 
 
-        elif alt16 == 22:
+        elif alt9 == 22:
+
+            pass
+            self.mQUOTE()
+
+
+        elif alt9 == 23:
 
             pass
             self.mTEXT()
@@ -1486,33 +1372,40 @@ class QueryLexer(Lexer):
 
 
     DFA8_eot = DFA.unpack(
-        u"\5\uffff"
+        u"\13\uffff"
         )
 
     DFA8_eof = DFA.unpack(
-        u"\5\uffff"
+        u"\13\uffff"
         )
 
     DFA8_min = DFA.unpack(
-        u"\2\56\3\uffff"
+        u"\1\134\1\42\11\uffff"
         )
 
     DFA8_max = DFA.unpack(
-        u"\1\71\1\145\3\uffff"
+        u"\1\134\1\176\11\uffff"
         )
 
     DFA8_accept = DFA.unpack(
-        u"\2\uffff\1\2\1\1\1\3"
+        u"\2\uffff\1\1\1\2\1\3\1\4\1\5\1\6\1\7\1\10\1\11"
         )
 
     DFA8_special = DFA.unpack(
-        u"\5\uffff"
+        u"\13\uffff"
         )
 
 
     DFA8_transition = [
-        DFA.unpack(u"\1\2\1\uffff\12\1"),
-        DFA.unpack(u"\1\3\1\uffff\12\1\13\uffff\1\4\37\uffff\1\4"),
+        DFA.unpack(u"\1\1"),
+        DFA.unpack(u"\1\11\10\uffff\1\7\1\2\15\uffff\1\3\1\uffff\1\5\1\4"
+        u"\1\6\35\uffff\1\12\41\uffff\1\10"),
+        DFA.unpack(u""),
+        DFA.unpack(u""),
+        DFA.unpack(u""),
+        DFA.unpack(u""),
+        DFA.unpack(u""),
+        DFA.unpack(u""),
         DFA.unpack(u""),
         DFA.unpack(u""),
         DFA.unpack(u"")
@@ -1523,145 +1416,133 @@ class QueryLexer(Lexer):
     DFA8 = DFA
 
 
-    DFA16_eot = DFA.unpack(
-        u"\4\uffff\1\26\3\24\1\33\1\uffff\1\25\2\uffff\1\24\2\uffff\1\41"
-        u"\1\43\1\25\4\uffff\1\45\3\24\1\uffff\1\33\1\25\2\52\6\uffff\1\56"
-        u"\1\57\1\25\1\52\1\uffff\1\52\2\25\2\uffff\1\25\1\52\1\25\1\52"
+    DFA9_eot = DFA.unpack(
+        u"\1\uffff\1\25\1\uffff\1\33\1\uffff\3\24\2\uffff\2\24\3\uffff\1"
+        u"\42\1\44\1\24\4\uffff\1\46\1\uffff\3\46\1\uffff\1\52\4\24\7\uffff"
+        u"\2\46\1\uffff\1\61\1\62\2\24\1\uffff\1\46\2\uffff\2\24\1\uffff"
+        u"\2\24\1\46\4\24\1\77\1\100\2\uffff"
         )
 
-    DFA16_eof = DFA.unpack(
-        u"\64\uffff"
+    DFA9_eof = DFA.unpack(
+        u"\101\uffff"
         )
 
-    DFA16_min = DFA.unpack(
-        u"\1\11\3\uffff\5\41\1\uffff\1\60\2\uffff\1\41\2\uffff\3\75\4\uffff"
-        u"\4\41\1\uffff\1\41\1\53\2\41\6\uffff\2\41\1\60\1\41\1\uffff\1\41"
-        u"\2\53\2\uffff\1\60\1\41\1\60\1\41"
+    DFA9_min = DFA.unpack(
+        u"\1\11\1\60\1\uffff\1\42\1\uffff\1\122\1\116\1\117\2\uffff\1\151"
+        u"\1\145\3\uffff\3\75\4\uffff\1\41\1\60\3\41\1\uffff\1\41\1\104\1"
+        u"\124\1\163\1\157\6\uffff\1\60\2\41\1\uffff\2\41\1\164\1\160\1\60"
+        u"\1\41\2\uffff\1\141\1\157\1\60\1\156\1\151\1\41\1\143\1\156\1\145"
+        u"\1\164\2\41\2\uffff"
         )
 
-    DFA16_max = DFA.unpack(
-        u"\1\ufaff\3\uffff\5\u7fff\1\uffff\1\71\2\uffff\1\u7fff\2\uffff\3"
-        u"\75\4\uffff\1\ufaff\3\u7fff\1\uffff\1\u7fff\1\71\2\u7fff\6\uffff"
-        u"\2\ufaff\1\71\1\u7fff\1\uffff\1\u7fff\2\71\2\uffff\1\71\1\u7fff"
-        u"\1\71\1\u7fff"
+    DFA9_max = DFA.unpack(
+        u"\1\uffee\1\71\1\uffff\1\176\1\uffff\1\122\1\116\1\117\2\uffff\1"
+        u"\151\1\145\3\uffff\3\75\4\uffff\1\uffee\1\146\3\uffee\1\uffff\1"
+        u"\uffee\1\104\1\124\1\163\1\157\6\uffff\1\146\2\uffee\1\uffff\2"
+        u"\uffee\1\164\1\160\1\146\1\uffee\2\uffff\1\141\1\157\1\146\1\156"
+        u"\1\151\1\uffee\1\143\1\156\1\145\1\164\2\uffee\2\uffff"
         )
 
-    DFA16_accept = DFA.unpack(
-        u"\1\uffff\1\1\1\2\1\3\5\uffff\1\11\1\uffff\1\13\1\14\1\uffff\1\16"
-        u"\1\17\3\uffff\1\25\1\15\1\26\1\4\4\uffff\1\10\4\uffff\1\23\1\20"
-        u"\1\22\1\21\1\24\1\5\4\uffff\1\12\3\uffff\1\6\1\7\4\uffff"
+    DFA9_accept = DFA.unpack(
+        u"\2\uffff\1\2\1\uffff\1\4\3\uffff\1\10\1\11\2\uffff\1\15\1\16\1"
+        u"\17\3\uffff\1\25\1\26\1\27\1\1\5\uffff\1\3\5\uffff\1\23\1\20\1"
+        u"\22\1\21\1\24\1\14\3\uffff\1\5\6\uffff\1\6\1\7\14\uffff\1\12\1"
+        u"\13"
         )
 
-    DFA16_special = DFA.unpack(
-        u"\64\uffff"
+    DFA9_special = DFA.unpack(
+        u"\101\uffff"
         )
 
 
-    DFA16_transition = [
-        DFA.unpack(u"\2\13\2\uffff\1\13\22\uffff\1\13\1\22\1\14\5\25\1\16"
-        u"\1\17\1\uffff\1\1\1\4\1\3\1\12\1\25\12\10\1\11\1\25\1\20\1\23\1"
-        u"\21\2\25\1\6\14\15\1\7\1\5\13\15\4\25\1\15\1\25\32\15\3\25\1\2"
-        u"\101\uffff\27\24\1\uffff\37\24\1\uffff\10\24\u1f00\15\u1040\25"
-        u"\u0150\15\u0170\25\u0080\15\u0080\25\u092e\15\u10d2\25\u3200\15"
-        u"\u2000\24\u5900\uffff\u0200\24"),
+    DFA9_transition = [
+        DFA.unpack(u"\2\14\1\uffff\2\14\22\uffff\1\14\1\21\1\23\5\24\1\15"
+        u"\1\16\1\24\1\11\1\2\1\1\14\24\1\4\1\24\1\17\1\22\1\20\2\24\1\6"
+        u"\14\24\1\7\1\5\14\24\1\3\7\24\1\12\2\24\1\13\26\24\1\10\42\uffff"
+        u"\uff4e\24"),
+        DFA.unpack(u"\12\24"),
+        DFA.unpack(u""),
+        DFA.unpack(u"\1\26\10\uffff\2\24\3\uffff\4\31\4\32\2\uffff\1\24"
+        u"\1\uffff\3\24\35\uffff\1\30\30\uffff\1\27\10\uffff\1\24"),
+        DFA.unpack(u""),
+        DFA.unpack(u"\1\34"),
+        DFA.unpack(u"\1\35"),
+        DFA.unpack(u"\1\36"),
         DFA.unpack(u""),
         DFA.unpack(u""),
-        DFA.unpack(u""),
-        DFA.unpack(u"\1\25\1\uffff\5\25\4\uffff\16\25\1\uffff\1\25\3\uffff"
-        u"\77\25\u0082\uffff\u7f00\25"),
-        DFA.unpack(u"\1\25\1\uffff\5\25\4\uffff\4\25\12\30\1\uffff\1\25"
-        u"\3\uffff\2\25\21\30\1\27\10\30\4\25\1\30\1\25\32\30\3\25\u0082"
-        u"\uffff\u1f00\30\u1040\25\u0150\30\u0170\25\u0080\30\u0080\25\u092e"
-        u"\30\u10d2\25\u3200\30"),
-        DFA.unpack(u"\1\25\1\uffff\5\25\4\uffff\4\25\12\30\1\uffff\1\25"
-        u"\3\uffff\2\25\15\30\1\31\14\30\4\25\1\30\1\25\32\30\3\25\u0082"
-        u"\uffff\u1f00\30\u1040\25\u0150\30\u0170\25\u0080\30\u0080\25\u092e"
-        u"\30\u10d2\25\u3200\30"),
-        DFA.unpack(u"\1\25\1\uffff\5\25\4\uffff\4\25\12\30\1\uffff\1\25"
-        u"\3\uffff\2\25\16\30\1\32\13\30\4\25\1\30\1\25\32\30\3\25\u0082"
-        u"\uffff\u1f00\30\u1040\25\u0150\30\u0170\25\u0080\30\u0080\25\u092e"
-        u"\30\u10d2\25\u3200\30"),
-        DFA.unpack(u"\1\25\1\uffff\5\25\4\uffff\2\25\1\36\1\25\12\34\1\uffff"
-        u"\1\25\3\uffff\6\25\1\35\37\25\1\35\30\25\u0082\uffff\u7f00\25"),
-        DFA.unpack(u""),
-        DFA.unpack(u"\12\37"),
-        DFA.unpack(u""),
-        DFA.unpack(u""),
-        DFA.unpack(u"\1\25\1\uffff\5\25\4\uffff\4\25\12\30\1\uffff\1\25"
-        u"\3\uffff\2\25\32\30\4\25\1\30\1\25\32\30\3\25\u0082\uffff\u1f00"
-        u"\30\u1040\25\u0150\30\u0170\25\u0080\30\u0080\25\u092e\30\u10d2"
-        u"\25\u3200\30"),
-        DFA.unpack(u""),
-        DFA.unpack(u""),
+        DFA.unpack(u"\1\37"),
         DFA.unpack(u"\1\40"),
-        DFA.unpack(u"\1\42"),
-        DFA.unpack(u"\1\44"),
+        DFA.unpack(u""),
+        DFA.unpack(u""),
+        DFA.unpack(u""),
+        DFA.unpack(u"\1\41"),
+        DFA.unpack(u"\1\43"),
+        DFA.unpack(u"\1\45"),
         DFA.unpack(u""),
         DFA.unpack(u""),
         DFA.unpack(u""),
         DFA.unpack(u""),
-        DFA.unpack(u"\1\25\1\uffff\5\25\4\uffff\4\25\12\30\1\uffff\1\25"
-        u"\3\uffff\2\25\32\30\4\25\1\30\1\25\32\30\3\25\102\uffff\27\24\1"
-        u"\uffff\37\24\1\uffff\10\24\u1f00\30\u1040\25\u0150\30\u0170\25"
-        u"\u0080\30\u0080\25\u092e\30\u10d2\25\u3200\30\u2000\24\u5900\uffff"
-        u"\u0200\24"),
-        DFA.unpack(u"\1\25\1\uffff\5\25\4\uffff\4\25\12\30\1\uffff\1\25"
-        u"\3\uffff\2\25\32\30\4\25\1\30\1\25\32\30\3\25\u0082\uffff\u1f00"
-        u"\30\u1040\25\u0150\30\u0170\25\u0080\30\u0080\25\u092e\30\u10d2"
-        u"\25\u3200\30"),
-        DFA.unpack(u"\1\25\1\uffff\5\25\4\uffff\4\25\12\30\1\uffff\1\25"
-        u"\3\uffff\2\25\3\30\1\46\26\30\4\25\1\30\1\25\32\30\3\25\u0082\uffff"
-        u"\u1f00\30\u1040\25\u0150\30\u0170\25\u0080\30\u0080\25\u092e\30"
-        u"\u10d2\25\u3200\30"),
-        DFA.unpack(u"\1\25\1\uffff\5\25\4\uffff\4\25\12\30\1\uffff\1\25"
-        u"\3\uffff\2\25\23\30\1\47\6\30\4\25\1\30\1\25\32\30\3\25\u0082\uffff"
-        u"\u1f00\30\u1040\25\u0150\30\u0170\25\u0080\30\u0080\25\u092e\30"
-        u"\u10d2\25\u3200\30"),
+        DFA.unpack(u"\1\24\1\uffff\5\24\2\uffff\2\24\1\uffff\15\24\1\uffff"
+        u"\1\24\3\uffff\77\24\43\uffff\uff4e\24"),
+        DFA.unpack(u"\12\47\7\uffff\6\47\32\uffff\6\47"),
+        DFA.unpack(u"\1\24\1\uffff\5\24\2\uffff\2\24\1\uffff\15\24\1\uffff"
+        u"\1\24\3\uffff\77\24\43\uffff\uff4e\24"),
+        DFA.unpack(u"\1\24\1\uffff\5\24\2\uffff\2\24\1\uffff\3\24\10\50"
+        u"\2\24\1\uffff\1\24\3\uffff\77\24\43\uffff\uff4e\24"),
+        DFA.unpack(u"\1\24\1\uffff\5\24\2\uffff\2\24\1\uffff\3\24\10\51"
+        u"\2\24\1\uffff\1\24\3\uffff\77\24\43\uffff\uff4e\24"),
         DFA.unpack(u""),
-        DFA.unpack(u"\1\25\1\uffff\5\25\4\uffff\2\25\1\36\1\25\12\34\1\uffff"
-        u"\1\25\3\uffff\6\25\1\35\37\25\1\35\30\25\u0082\uffff\u7f00\25"),
-        DFA.unpack(u"\1\52\1\uffff\1\50\2\uffff\12\51"),
-        DFA.unpack(u"\1\25\1\uffff\5\25\4\uffff\4\25\12\53\1\uffff\1\25"
-        u"\3\uffff\6\25\1\54\37\25\1\54\30\25\u0082\uffff\u7f00\25"),
-        DFA.unpack(u"\1\25\1\uffff\5\25\4\uffff\4\25\12\37\1\uffff\1\25"
-        u"\3\uffff\6\25\1\55\37\25\1\55\30\25\u0082\uffff\u7f00\25"),
+        DFA.unpack(u"\1\24\1\uffff\5\24\2\uffff\2\24\1\uffff\15\24\1\uffff"
+        u"\1\24\3\uffff\77\24\43\uffff\uff4e\24"),
+        DFA.unpack(u"\1\53"),
+        DFA.unpack(u"\1\54"),
+        DFA.unpack(u"\1\55"),
+        DFA.unpack(u"\1\56"),
         DFA.unpack(u""),
         DFA.unpack(u""),
         DFA.unpack(u""),
         DFA.unpack(u""),
         DFA.unpack(u""),
         DFA.unpack(u""),
-        DFA.unpack(u"\1\25\1\uffff\5\25\4\uffff\4\25\12\30\1\uffff\1\25"
-        u"\3\uffff\2\25\32\30\4\25\1\30\1\25\32\30\3\25\102\uffff\27\24\1"
-        u"\uffff\37\24\1\uffff\10\24\u1f00\30\u1040\25\u0150\30\u0170\25"
-        u"\u0080\30\u0080\25\u092e\30\u10d2\25\u3200\30\u2000\24\u5900\uffff"
-        u"\u0200\24"),
-        DFA.unpack(u"\1\25\1\uffff\5\25\4\uffff\4\25\12\30\1\uffff\1\25"
-        u"\3\uffff\2\25\32\30\4\25\1\30\1\25\32\30\3\25\102\uffff\27\24\1"
-        u"\uffff\37\24\1\uffff\10\24\u1f00\30\u1040\25\u0150\30\u0170\25"
-        u"\u0080\30\u0080\25\u092e\30\u10d2\25\u3200\30\u2000\24\u5900\uffff"
-        u"\u0200\24"),
-        DFA.unpack(u"\12\51"),
-        DFA.unpack(u"\1\25\1\uffff\5\25\4\uffff\4\25\12\51\1\uffff\1\25"
-        u"\3\uffff\77\25\u0082\uffff\u7f00\25"),
+        DFA.unpack(u"\12\57\7\uffff\6\57\32\uffff\6\57"),
+        DFA.unpack(u"\1\24\1\uffff\5\24\2\uffff\2\24\1\uffff\3\24\10\60"
+        u"\2\24\1\uffff\1\24\3\uffff\77\24\43\uffff\uff4e\24"),
+        DFA.unpack(u"\1\24\1\uffff\5\24\2\uffff\2\24\1\uffff\15\24\1\uffff"
+        u"\1\24\3\uffff\77\24\43\uffff\uff4e\24"),
         DFA.unpack(u""),
-        DFA.unpack(u"\1\25\1\uffff\5\25\4\uffff\4\25\12\53\1\uffff\1\25"
-        u"\3\uffff\6\25\1\54\37\25\1\54\30\25\u0082\uffff\u7f00\25"),
-        DFA.unpack(u"\1\52\1\uffff\1\60\2\uffff\12\61"),
-        DFA.unpack(u"\1\52\1\uffff\1\62\2\uffff\12\63"),
+        DFA.unpack(u"\1\24\1\uffff\5\24\2\uffff\2\24\1\uffff\15\24\1\uffff"
+        u"\1\24\3\uffff\77\24\43\uffff\uff4e\24"),
+        DFA.unpack(u"\1\24\1\uffff\5\24\2\uffff\2\24\1\uffff\15\24\1\uffff"
+        u"\1\24\3\uffff\77\24\43\uffff\uff4e\24"),
+        DFA.unpack(u"\1\63"),
+        DFA.unpack(u"\1\64"),
+        DFA.unpack(u"\12\65\7\uffff\6\65\32\uffff\6\65"),
+        DFA.unpack(u"\1\24\1\uffff\5\24\2\uffff\2\24\1\uffff\15\24\1\uffff"
+        u"\1\24\3\uffff\77\24\43\uffff\uff4e\24"),
         DFA.unpack(u""),
         DFA.unpack(u""),
-        DFA.unpack(u"\12\61"),
-        DFA.unpack(u"\1\25\1\uffff\5\25\4\uffff\4\25\12\61\1\uffff\1\25"
-        u"\3\uffff\77\25\u0082\uffff\u7f00\25"),
-        DFA.unpack(u"\12\63"),
-        DFA.unpack(u"\1\25\1\uffff\5\25\4\uffff\4\25\12\63\1\uffff\1\25"
-        u"\3\uffff\77\25\u0082\uffff\u7f00\25")
+        DFA.unpack(u"\1\66"),
+        DFA.unpack(u"\1\67"),
+        DFA.unpack(u"\12\70\7\uffff\6\70\32\uffff\6\70"),
+        DFA.unpack(u"\1\71"),
+        DFA.unpack(u"\1\72"),
+        DFA.unpack(u"\1\24\1\uffff\5\24\2\uffff\2\24\1\uffff\15\24\1\uffff"
+        u"\1\24\3\uffff\77\24\43\uffff\uff4e\24"),
+        DFA.unpack(u"\1\73"),
+        DFA.unpack(u"\1\74"),
+        DFA.unpack(u"\1\75"),
+        DFA.unpack(u"\1\76"),
+        DFA.unpack(u"\1\24\1\uffff\5\24\2\uffff\2\24\1\uffff\15\24\1\uffff"
+        u"\1\24\3\uffff\77\24\43\uffff\uff4e\24"),
+        DFA.unpack(u"\1\24\1\uffff\5\24\2\uffff\2\24\1\uffff\15\24\1\uffff"
+        u"\1\24\3\uffff\77\24\43\uffff\uff4e\24"),
+        DFA.unpack(u""),
+        DFA.unpack(u"")
     ]
 
 
 
-    DFA16 = DFA
+    DFA9 = DFA
 
 
 

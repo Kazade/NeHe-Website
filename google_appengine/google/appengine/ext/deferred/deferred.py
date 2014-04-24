@@ -102,6 +102,7 @@ from google.appengine.ext import webapp
 from google.appengine.ext.webapp.util import run_wsgi_app
 
 
+_DEFAULT_LOG_LEVEL = logging.INFO
 _TASKQUEUE_HEADERS = {"Content-Type": "application/octet-stream"}
 _DEFAULT_URL = "/_ah/queue/deferred"
 _DEFAULT_QUEUE = "default"
@@ -113,6 +114,20 @@ class Error(Exception):
 
 class PermanentTaskFailure(Error):
   """Indicates that a task failed, and will never succeed."""
+
+
+class SingularTaskFailure(Error):
+  """Indicates that a task failed once."""
+
+
+def set_log_level(log_level):
+  """Sets the log level deferred will log to in normal circumstances.
+
+  Args:
+    log_level: one of logging log levels, e.g. logging.DEBUG, logging.INFO, etc.
+  """
+  global _DEFAULT_LOG_LEVEL
+  _DEFAULT_LOG_LEVEL = log_level
 
 
 def run(data):
@@ -232,15 +247,16 @@ def defer(obj, *args, **kwargs):
   Args:
     obj: The callable to execute. See module docstring for restrictions.
         _countdown, _eta, _headers, _name, _target, _transactional, _url,
-        _queue: Passed through to the task queue - see the task queue
-        documentation for details.
+        _retry_options, _queue: Passed through to the task queue - see the
+        task queue documentation for details.
     args: Positional arguments to call the callable with.
     kwargs: Any other keyword arguments are passed through to the callable.
   Returns:
     A taskqueue.Task object which represents an enqueued callable.
   """
   taskargs = dict((x, kwargs.pop(("_%s" % x), None))
-                  for x in ("countdown", "eta", "name", "target"))
+                  for x in ("countdown", "eta", "name", "target",
+                            "retry_options"))
   taskargs["url"] = kwargs.pop("_url", _DEFAULT_URL)
   transactional = kwargs.pop("_transactional", False)
   taskargs["headers"] = dict(_TASKQUEUE_HEADERS)
@@ -261,8 +277,8 @@ def defer(obj, *args, **kwargs):
 class TaskHandler(webapp.RequestHandler):
   """A webapp handler class that processes deferred invocations."""
 
-  def post(self):
-
+  def run_from_request(self):
+    """Default behavior for POST requests to deferred handler."""
 
     if 'X-AppEngine-TaskName' not in self.request.headers:
       logging.critical('Detected an attempted XSRF attack. The header '
@@ -283,10 +299,20 @@ class TaskHandler(webapp.RequestHandler):
 
     headers = ["%s:%s" % (k, v) for k, v in self.request.headers.items()
                if k.lower().startswith("x-appengine-")]
-    logging.info(", ".join(headers))
+    logging.log(_DEFAULT_LOG_LEVEL, ", ".join(headers))
+
+    run(self.request.body)
+
+  def post(self):
 
     try:
-      run(self.request.body)
+      self.run_from_request()
+    except SingularTaskFailure:
+
+
+      logging.debug("Failure executing task, task retry forced")
+      self.response.set_status(408)
+      return
     except PermanentTaskFailure, e:
 
       logging.exception("Permanent failure attempting to execute task")

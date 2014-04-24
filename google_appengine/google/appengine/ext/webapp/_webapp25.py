@@ -378,12 +378,16 @@ class Response(object):
     415: 'Unsupported Media Type',
     416: 'Requested Range Not Satisfiable',
     417: 'Expectation Failed',
+    428: 'Precondition Required',
+    429: 'Too Many Requests',
+    431: 'Request Header Fields Too Large',
     500: 'Internal Server Error',
     501: 'Not Implemented',
     502: 'Bad Gateway',
     503: 'Service Unavailable',
     504: 'Gateway Time-out',
-    505: 'HTTP Version not supported'
+    505: 'HTTP Version not supported',
+    511: 'Network Authentication Required'
   }
 
 
@@ -683,10 +687,19 @@ class WSGIApplication(object):
     for regexp, handler_class in self._url_mapping:
       match = regexp.match(request.path)
       if match:
-        handler = handler_class()
+        try:
+          handler = handler_class()
 
 
-        handler.initialize(request, response)
+
+          handler.initialize(request, response)
+        except Exception, e:
+          if handler is None:
+            handler = RequestHandler()
+          handler.response = response
+          handler.handle_exception(e, self.__debug)
+          response.wsgi_write(start_response)
+          return ['']
         groups = match.groups()
         break
 

@@ -33,6 +33,9 @@ import cgi
 import os
 import urlparse
 
+from google.appengine.api.channel.channel_service_stub import InvalidTokenError
+from google.appengine.api.channel.channel_service_stub import TokenTimedOutError
+
 
 
 CHANNEL_POLL_PATTERN = '/_ah/channel/dev(?:/.*)?'
@@ -91,8 +94,6 @@ def CreateChannelDispatcher(channel_service_stub):
           Defaults to None.
       """
 
-      outfile.write('Status: 200\r\n')
-
       (unused_scheme, unused_netloc,
        path, query,
        unused_fragment) = urlparse.urlsplit(request.relative_url)
@@ -102,19 +103,36 @@ def CreateChannelDispatcher(channel_service_stub):
 
       if page == 'jsapi':
         path = os.path.join(os.path.dirname(__file__), 'dev-channel-js.js')
+        outfile.write('Status: 200\r\n')
         outfile.write('Content-type: text/javascript\r\n\r\n')
         outfile.write(open(path).read())
       elif page == 'dev':
+        token = param_dict['channel'][0]
+
+        token_error = None
+        try:
+          self._channel_service_stub.validate_token_and_extract_client_id(token)
+
+
+        except InvalidTokenError:
+          token_error = 'Invalid+token.'
+        except TokenTimedOutError:
+          token_error = 'Token+timed+out.'
+
+        if token_error is not None:
+          outfile.write('Status: 401 %s\r\n\r\n' % token_error)
+          return
+
+        outfile.write('Status: 200\r\n')
         outfile.write('\r\n')
-        id = param_dict['channel'][0]
         command = param_dict['command'][0]
 
         if command == 'connect':
-          self._channel_service_stub.connect_channel(id)
+          self._channel_service_stub.connect_channel(token)
           outfile.write('1')
         elif command == 'poll':
-          self._channel_service_stub.connect_channel(id)
-          if self._channel_service_stub.has_channel_messages(id):
-            outfile.write(self._channel_service_stub.pop_first_message(id))
+          self._channel_service_stub.connect_channel(token)
+          if self._channel_service_stub.has_channel_messages(token):
+            outfile.write(self._channel_service_stub.pop_first_message(token))
 
   return ChannelDispatcher(channel_service_stub)

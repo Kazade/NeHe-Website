@@ -1,12 +1,11 @@
 application: nehesite
-version: 28
+version: 29
 runtime: python27
 api_version: 1
 threadsafe: yes
 
 builtins:
 - remote_api: on
-- datastore_admin: on
 
 inbound_services:
 - warmup

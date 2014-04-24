@@ -110,8 +110,8 @@ max_doublings: A non-negative integer. On successive failures, the retry backoff
 A queue may optionally specify an acl (Access Control List).
   acl:
   - user_email: a@foo.com
-  - user_email: b@gmail.com
-Each user email must correspond to an account hosted by Google. The acl is
+  - writer_email: b@gmail.com
+Each email must correspond to an account hosted by Google. The acl is
 enforced for queue access from outside AppEngine.
 
 An app's queues are also subject to storage quota limits for their stored tasks,
@@ -134,23 +134,28 @@ available to an app, it is clamped.
 
 
 
+from google.appengine.api import appinfo
 from google.appengine.api import validation
 from google.appengine.api import yaml_builder
 from google.appengine.api import yaml_listener
 from google.appengine.api import yaml_object
+from google.appengine.api.taskqueue import taskqueue_service_pb
 
 
 _NAME_REGEX = r'^[A-Za-z0-9-]{0,499}$'
 _RATE_REGEX = r'^(0|[0-9]+(\.[0-9]*)?/[smhd])'
 _TOTAL_STORAGE_LIMIT_REGEX = r'^([0-9]+(\.[0-9]*)?[BKMGT]?)'
-_TASK_AGE_LIMIT_REGEX = r'^([0-9]+(\.[0-9]*(e-?[0-9]+))?[smhd])'
 _MODE_REGEX = r'(pull)|(push)'
 
 
 
 
-_MAJOR_VERSION_ID_MAX_LEN = 100
-_VERSION_REGEX = r'(?!-)[a-z\d\-]{1,%d}' % _MAJOR_VERSION_ID_MAX_LEN
+MODULE_ID_RE_STRING = r'(?!-)[a-z\d\-]{1,63}'
+
+
+MODULE_VERSION_RE_STRING = r'(?!-)[a-z\d\-]{1,100}'
+_VERSION_REGEX = r'^(?:(?:(%s):)?)(%s)$' % (MODULE_ID_RE_STRING,
+                                            MODULE_VERSION_RE_STRING)
 
 QUEUE = 'queue'
 
@@ -173,6 +178,7 @@ MAX_DOUBLINGS = 'max_doublings'
 
 ACL = 'acl'
 USER_EMAIL = 'user_email'
+WRITER_EMAIL = 'writer_email'
 
 
 class MalformedQueueConfiguration(Exception):
@@ -183,7 +189,7 @@ class RetryParameters(validation.Validated):
   """Retry parameters for a single task queue."""
   ATTRIBUTES = {
       TASK_RETRY_LIMIT: validation.Optional(validation.TYPE_INT),
-      TASK_AGE_LIMIT: validation.Optional(_TASK_AGE_LIMIT_REGEX),
+      TASK_AGE_LIMIT: validation.Optional(validation.TimeValue()),
       MIN_BACKOFF_SECONDS: validation.Optional(validation.TYPE_FLOAT),
       MAX_BACKOFF_SECONDS: validation.Optional(validation.TYPE_FLOAT),
       MAX_DOUBLINGS: validation.Optional(validation.TYPE_INT),
@@ -193,7 +199,8 @@ class RetryParameters(validation.Validated):
 class Acl(validation.Validated):
   """Access control list for a single task queue."""
   ATTRIBUTES = {
-      USER_EMAIL: validation.TYPE_STR,
+      USER_EMAIL: validation.Optional(validation.TYPE_STR),
+      WRITER_EMAIL: validation.Optional(validation.TYPE_STR),
   }
 
 
@@ -207,6 +214,8 @@ class QueueEntry(validation.Validated):
       MAX_CONCURRENT_REQUESTS: validation.Optional(validation.TYPE_INT),
       RETRY_PARAMETERS: validation.Optional(RetryParameters),
       ACL: validation.Optional(validation.Repeated(Acl)),
+
+
       TARGET: validation.Optional(_VERSION_REGEX),
   }
 
@@ -214,16 +223,18 @@ class QueueEntry(validation.Validated):
 class QueueInfoExternal(validation.Validated):
   """QueueInfoExternal describes all queue entries for an application."""
   ATTRIBUTES = {
+      appinfo.APPLICATION: validation.Optional(appinfo.APPLICATION_RE_STRING),
       TOTAL_STORAGE_LIMIT: validation.Optional(_TOTAL_STORAGE_LIMIT_REGEX),
       QUEUE: validation.Optional(validation.Repeated(QueueEntry)),
   }
 
 
-def LoadSingleQueue(queue_info):
+def LoadSingleQueue(queue_info, open_fn=None):
   """Load a queue.yaml file or string and return a QueueInfoExternal object.
 
   Args:
     queue_info: the contents of a queue.yaml file, as a string.
+    open_fn: Function for opening files. Unused.
 
   Returns:
     A QueueInfoExternal object.
@@ -281,6 +292,7 @@ def ParseRate(rate):
   if unit == 'd':
     return number/(24 * 60 * 60)
 
+
 def ParseTotalStorageLimit(limit):
   """Parses a string representing the storage bytes limit.
 
@@ -315,6 +327,7 @@ def ParseTotalStorageLimit(limit):
   except ValueError:
     raise MalformedQueueConfiguration('Total Storage Limit "%s" is invalid.' %
                                       limit)
+
 
 def ParseTaskAgeLimit(age_limit):
   """Parses a string representing the task's age limit (maximum allowed age).
@@ -353,3 +366,71 @@ def ParseTaskAgeLimit(age_limit):
   except ValueError:
     raise MalformedQueueConfiguration('Task Age_Limit "%s" is invalid.' %
                                       age_limit)
+
+
+def TranslateRetryParameters(retry):
+  """Populates a TaskQueueRetryParameters from a queueinfo.RetryParameters.
+
+  Args:
+    retry: A queueinfo.RetryParameters read from queue.yaml that describes the
+        queue's retry parameters.
+
+  Returns:
+    A taskqueue_service_pb.TaskQueueRetryParameters proto populated with the
+    data from "retry".
+
+  Raises:
+    MalformedQueueConfiguration: if the retry parameters are invalid.
+  """
+  params = taskqueue_service_pb.TaskQueueRetryParameters()
+  if retry.task_retry_limit is not None:
+    params.set_retry_limit(int(retry.task_retry_limit))
+  if retry.task_age_limit is not None:
+
+    params.set_age_limit_sec(ParseTaskAgeLimit(retry.task_age_limit))
+  if retry.min_backoff_seconds is not None:
+    params.set_min_backoff_sec(float(retry.min_backoff_seconds))
+  if retry.max_backoff_seconds is not None:
+    params.set_max_backoff_sec(float(retry.max_backoff_seconds))
+  if retry.max_doublings is not None:
+    params.set_max_doublings(int(retry.max_doublings))
+
+
+
+
+
+  if params.has_min_backoff_sec() and not params.has_max_backoff_sec():
+    if params.min_backoff_sec() > params.max_backoff_sec():
+      params.set_max_backoff_sec(params.min_backoff_sec())
+
+  if not params.has_min_backoff_sec() and params.has_max_backoff_sec():
+    if params.min_backoff_sec() > params.max_backoff_sec():
+      params.set_min_backoff_sec(params.max_backoff_sec())
+
+
+  if params.has_retry_limit() and params.retry_limit() < 0:
+    raise MalformedQueueConfiguration(
+        'Task retry limit must not be less than zero.')
+
+  if params.has_age_limit_sec() and not params.age_limit_sec() > 0:
+    raise MalformedQueueConfiguration(
+        'Task age limit must be greater than zero.')
+
+  if params.has_min_backoff_sec() and params.min_backoff_sec() < 0:
+    raise MalformedQueueConfiguration(
+        'Min backoff seconds must not be less than zero.')
+
+  if params.has_max_backoff_sec() and params.max_backoff_sec() < 0:
+    raise MalformedQueueConfiguration(
+        'Max backoff seconds must not be less than zero.')
+
+  if params.has_max_doublings() and params.max_doublings() < 0:
+    raise MalformedQueueConfiguration(
+        'Max doublings must not be less than zero.')
+
+  if (params.has_min_backoff_sec() and params.has_max_backoff_sec() and
+      params.min_backoff_sec() > params.max_backoff_sec()):
+    raise MalformedQueueConfiguration(
+        'Min backoff sec must not be greater than than max backoff sec.')
+
+  return params

@@ -20,6 +20,7 @@
 
 """Copyright 2008 Python Software Foundation, Ian Bicking, and Google."""
 
+import inspect
 import mimetools
 import StringIO
 import sys
@@ -150,6 +151,7 @@ class HTTPConnection:
       'HEAD': urlfetch.HEAD,
       'PUT': urlfetch.PUT,
       'DELETE': urlfetch.DELETE,
+      'PATCH': urlfetch.PATCH,
     }
 
     self.host = host
@@ -190,14 +192,26 @@ class HTTPConnection:
     line = '\r\n\t'.join([str(line) for line in lines])
     self.headers.append((header, line))
 
-  def endheaders(self):
-    pass
+  def endheaders(self, message_body=None):
+
+    if message_body is not None:
+      self.send(message_body)
 
   def set_debuglevel(self, level=None):
     pass
 
   def send(self, data):
     self._body += data
+
+  @staticmethod
+  def _getargspec(callable_object):
+    assert callable(callable_object)
+    try:
+
+      return inspect.getargspec(callable_object)
+    except TypeError:
+
+      return inspect.getargspec(callable_object.__call__)
 
   def getresponse(self):
     if self.port and self.port != self.default_port:
@@ -215,9 +229,18 @@ class HTTPConnection:
     except KeyError:
       raise ValueError("%r is an unrecognized HTTP method" % self._method)
 
+
+
+
+
+    args, _, keywords, _ = self._getargspec(self._fetch)
+    extra_kwargs = (
+        {'validate_certificate': False}
+        if keywords or 'validate_certificate' in args
+        else {})
     response = self._fetch(url, self._body, method, headers,
                            self._allow_truncated, self._follow_redirects,
-                           deadline=self.timeout)
+                           deadline=self.timeout, **extra_kwargs)
     return HTTPResponse(response)
 
   def close(self):
@@ -239,6 +262,111 @@ class HTTPSConnection(HTTPConnection):
                                 timeout=timeout)
 
 
+class HTTPMessage(mimetools.Message):
+
+    def addheader(self, key, value):
+        """Add header for field key handling repeats."""
+        prev = self.dict.get(key)
+        if prev is None:
+            self.dict[key] = value
+        else:
+            combined = ", ".join((prev, value))
+            self.dict[key] = combined
+
+    def addcontinue(self, key, more):
+        """Add more field data from a continuation line."""
+        prev = self.dict[key]
+        self.dict[key] = prev + "\n " + more
+
+    def readheaders(self):
+        """Read header lines.
+
+        Read header lines up to the entirely blank line that terminates them.
+        The (normally blank) line that ends the headers is skipped, but not
+        included in the returned list.  If a non-header line ends the headers,
+        (which is an error), an attempt is made to backspace over it; it is
+        never included in the returned list.
+
+        The variable self.status is set to the empty string if all went well,
+        otherwise it is an error message.  The variable self.headers is a
+        completely uninterpreted list of lines contained in the header (so
+        printing them will reproduce the header exactly as it appears in the
+        file).
+
+        If multiple header fields with the same name occur, they are combined
+        according to the rules in RFC 2616 sec 4.2:
+
+        Appending each subsequent field-value to the first, each separated
+        by a comma. The order in which header fields with the same field-name
+        are received is significant to the interpretation of the combined
+        field value.
+        """
+
+
+
+
+
+        self.dict = {}
+        self.unixfrom = ''
+        self.headers = hlist = []
+        self.status = ''
+        headerseen = ""
+        firstline = 1
+        startofline = unread = tell = None
+        if hasattr(self.fp, 'unread'):
+            unread = self.fp.unread
+        elif self.seekable:
+            tell = self.fp.tell
+        while True:
+            if tell:
+                try:
+                    startofline = tell()
+                except IOError:
+                    startofline = tell = None
+                    self.seekable = 0
+            line = self.fp.readline()
+            if not line:
+                self.status = 'EOF in headers'
+                break
+
+            if firstline and line.startswith('From '):
+                self.unixfrom = self.unixfrom + line
+                continue
+            firstline = 0
+            if headerseen and line[0] in ' \t':
+
+
+
+                hlist.append(line)
+                self.addcontinue(headerseen, line.strip())
+                continue
+            elif self.iscomment(line):
+
+                continue
+            elif self.islast(line):
+
+                break
+            headerseen = self.isheader(line)
+            if headerseen:
+
+                hlist.append(line)
+                self.addheader(headerseen, line[len(headerseen)+1:].strip())
+                continue
+            else:
+
+                if not self.dict:
+                    self.status = 'No headers'
+                else:
+                    self.status = 'Non-header line where header expected'
+
+                if unread:
+                    unread(line)
+                elif tell:
+                    self.fp.seek(startofline)
+                else:
+                    self.status = self.status + '; bad seek'
+                break
+
 class HTTPResponse(object):
 
   def __init__(self, fetch_response):
@@ -256,10 +384,7 @@ class HTTPResponse(object):
 
   @property
   def msg(self):
-    msg = mimetools.Message(StringIO.StringIO(''))
-    for name, value in self._fetch_response.headers.items():
-      msg[name] = str(value)
-    return msg
+    return self._fetch_response.header_msg
 
   version = 11
 
@@ -330,7 +455,6 @@ class HTTP:
     - any RFC822 headers in the response from the server
     """
     response = self._conn.getresponse()
-
     self.headers = response.msg
     self.file = response.fp
     return response.status, response.reason, response.msg

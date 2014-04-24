@@ -21,7 +21,8 @@
 """URL downloading API.
 
 Methods defined in this module:
-   Fetch(): fetchs a given URL using an HTTP GET or POST
+   Fetch(): fetchs a given URL using an HTTP request using on of the methods
+            GET, POST, HEAD, PUT, DELETE or PATCH request
 """
 
 
@@ -32,7 +33,9 @@ Methods defined in this module:
 
 
 
+import httplib
 import os
+import StringIO
 import threading
 import UserDict
 import urllib2
@@ -53,6 +56,7 @@ POST = 2
 HEAD = 3
 PUT = 4
 DELETE = 5
+PATCH = 6
 
 _URL_STRING_MAP = {
     'GET': GET,
@@ -60,6 +64,7 @@ _URL_STRING_MAP = {
     'HEAD': HEAD,
     'PUT': PUT,
     'DELETE': DELETE,
+    'PATCH': PATCH,
 }
 
 _VALID_METHODS = frozenset(_URL_STRING_MAP.values())
@@ -73,9 +78,9 @@ class _CaselessDict(UserDict.IterableUserDict):
   This class was lifted from os.py and slightly modified.
   """
 
-  def __init__(self):
-    UserDict.IterableUserDict.__init__(self)
+  def __init__(self, dict=None, **kwargs):
     self.caseless_keys = {}
+    UserDict.IterableUserDict.__init__(self, dict, **kwargs)
 
   def __setitem__(self, key, item):
     """Set dictionary item.
@@ -224,9 +229,10 @@ def fetch(url, payload=None, method=GET, headers={},
   """Fetches the given HTTP URL, blocking until the result is returned.
 
   Other optional parameters are:
-     method: GET, POST, HEAD, PUT, or DELETE
-     payload: POST or PUT payload (implies method is not GET, HEAD, or DELETE).
-       this is ignored if the method is not POST or PUT.
+     method: The constants GET, POST, HEAD, PUT, DELETE, or PATCH or the
+       same HTTP methods as strings.
+     payload: POST, PUT, or PATCH payload (implies method is not GET, HEAD,
+       or DELETE). this is ignored if the method is not POST, PUT, or PATCH.
      headers: dictionary of HTTP headers to send with the request
      allow_truncated: if true, truncate large responses and return them without
        error. Otherwise, ResponseTooLargeError is raised when a response is
@@ -257,6 +263,7 @@ def fetch(url, payload=None, method=GET, headers={},
   of the returned structure, so HTTP errors like 404 do not result in an
   exception.
   """
+
   rpc = create_rpc(deadline=deadline)
   make_fetch_call(rpc, url, payload, method, headers,
                   allow_truncated, follow_redirects, validate_certificate)
@@ -271,9 +278,17 @@ def make_fetch_call(rpc, url, payload=None, method=GET, headers={},
   The first argument is a UserRPC instance.  See urlfetch.fetch for a
   thorough description of remaining arguments.
 
+  Raises:
+    InvalidMethodError: if requested method is not in _VALID_METHODS
+    ResponseTooLargeError: if the response payload is too large
+    InvalidURLError: if there are issues with the content/size of the
+      requested URL
+
   Returns:
     The rpc object passed into the function.
+
   """
+
   assert rpc.service == 'urlfetch', repr(rpc.service)
   if isinstance(method, basestring):
     method = method.upper()
@@ -302,9 +317,11 @@ def make_fetch_call(rpc, url, payload=None, method=GET, headers={},
     request.set_method(urlfetch_service_pb.URLFetchRequest.PUT)
   elif method == DELETE:
     request.set_method(urlfetch_service_pb.URLFetchRequest.DELETE)
+  elif method == PATCH:
+    request.set_method(urlfetch_service_pb.URLFetchRequest.PATCH)
 
 
-  if payload and (method == POST or method == PUT):
+  if payload and method in (POST, PUT, PATCH):
     request.set_payload(payload)
 
 
@@ -340,9 +357,9 @@ def _get_fetch_result(rpc):
     rpc: A UserRPC object.
 
   Raises:
-    InvalidURLError if the url was invalid.
-    DownloadError if there was a problem fetching the url.
-    ResponseTooLargeError if the response was either truncated (and
+    InvalidURLError: if the url was invalid.
+    DownloadError: if there was a problem fetching the url.
+    ResponseTooLargeError: if the response was either truncated (and
       allow_truncated=False was passed to make_fetch_call()), or if it
       was too big for us to download.
 
@@ -351,27 +368,63 @@ def _get_fetch_result(rpc):
   """
   assert rpc.service == 'urlfetch', repr(rpc.service)
   assert rpc.method == 'Fetch', repr(rpc.method)
+
+  url = rpc.request.url()
+
   try:
     rpc.check_success()
+  except apiproxy_errors.RequestTooLargeError, err:
+    error_detail = ''
+    if err.error_detail:
+      error_detail = ' Error: ' + err.error_detail
+    raise InvalidURLError(
+        'Invalid request URL: ' + url + error_detail)
   except apiproxy_errors.ApplicationError, err:
+    error_detail = ''
+    if err.error_detail:
+      error_detail = ' Error: ' + err.error_detail
     if (err.application_error ==
         urlfetch_service_pb.URLFetchServiceError.INVALID_URL):
-      raise InvalidURLError(str(err))
+      raise InvalidURLError(
+          'Invalid request URL: ' + url + error_detail)
+    if (err.application_error ==
+        urlfetch_service_pb.URLFetchServiceError.CLOSED):
+      raise ConnectionClosedError(
+          'Connection closed unexpectedly by server at URL: ' + url)
+    if (err.application_error ==
+        urlfetch_service_pb.URLFetchServiceError.TOO_MANY_REDIRECTS):
+      raise TooManyRedirectsError(
+          'Too many redirects at URL: ' + url + ' with redirect=true')
+    if (err.application_error ==
+        urlfetch_service_pb.URLFetchServiceError.MALFORMED_REPLY):
+      raise MalformedReplyError(
+          'Malformed HTTP reply received from server at URL: '
+          + url + error_detail)
+    if (err.application_error ==
+        urlfetch_service_pb.URLFetchServiceError.INTERNAL_TRANSIENT_ERROR):
+      raise InteralTransientError(
+          'Temporary error in fetching URL: ' + url + ', please re-try')
+    if (err.application_error ==
+        urlfetch_service_pb.URLFetchServiceError.DNS_ERROR):
+      raise DNSLookupFailedError('DNS lookup failed for URL: ' + url)
     if (err.application_error ==
         urlfetch_service_pb.URLFetchServiceError.UNSPECIFIED_ERROR):
-      raise DownloadError(str(err))
+      raise DownloadError('Unspecified error in fetching URL: '
+                          + url + error_detail)
     if (err.application_error ==
         urlfetch_service_pb.URLFetchServiceError.FETCH_ERROR):
-      raise DownloadError(str(err))
+      raise DownloadError("Unable to fetch URL: " + url + error_detail)
     if (err.application_error ==
         urlfetch_service_pb.URLFetchServiceError.RESPONSE_TOO_LARGE):
-      raise ResponseTooLargeError(None)
+      raise ResponseTooLargeError('HTTP response too large from URL: ' + url)
     if (err.application_error ==
         urlfetch_service_pb.URLFetchServiceError.DEADLINE_EXCEEDED):
-      raise DeadlineExceededError(str(err))
+      raise DeadlineExceededError(
+          'Deadline exceeded while waiting for HTTP response from URL: ' + url)
     if (err.application_error ==
         urlfetch_service_pb.URLFetchServiceError.SSL_CERTIFICATE_ERROR):
-      raise SSLCertificateError(str(err))
+      raise SSLCertificateError(
+        'Invalid and/or missing SSL certificate for URL: ' + url)
     raise err
 
   response = rpc.response
@@ -381,9 +434,7 @@ def _get_fetch_result(rpc):
     raise ResponseTooLargeError(result)
   return result
 
-
 Fetch = fetch
-
 
 class _URLFetchResult(object):
   """A Pythonic representation of our fetch response protocol buffer.
@@ -399,11 +450,11 @@ class _URLFetchResult(object):
     self.content = response_proto.content()
     self.status_code = response_proto.statuscode()
     self.content_was_truncated = response_proto.contentwastruncated()
-    self.headers = _CaselessDict()
     self.final_url = response_proto.finalurl() or None
-    for header_proto in response_proto.header_list():
-      self.headers[header_proto.key()] = header_proto.value()
-
+    self.header_msg = httplib.HTTPMessage(
+        StringIO.StringIO(''.join(['%s: %s\n' % (h.key(), h.value())
+                          for h in response_proto.header_list()] + ['\n'])))
+    self.headers = _CaselessDict(self.header_msg.items())
 
 def get_default_fetch_deadline():
   """Get the default value for create_rpc()'s deadline parameter."""

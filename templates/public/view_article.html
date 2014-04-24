@@ -2,12 +2,6 @@
 
 {% block title %}NeHe Productions: {{article.title}}{% endblock %}
 
-{% block adsense %}
-    {% if not article.author.profile.adsense_code %}
-        {{block.super}}
-    {% endif %}
-{% endblock %}
-
 {% block after_body %}
 <div id="fb-root"></div>
 <script>(function(d, s, id) {
@@ -28,7 +22,7 @@
 <div style="text-align:left;">
     <strong><img align="left" src="/static/images/edit.png" height="22" width="22" hspace="2"/><a target="_blank" href="/admin/articles/article/{{article.pk}}/">Edit this article</a></strong>
     <div style="clear:both;"></div>
-</div>    
+</div>
 {% endif %}
 
 <h1 class="article-header">{{article.title}}</h1>
@@ -59,14 +53,14 @@
 {% endblock %}
 
 {% block preload_js %}
-{% if article.author.profile.flattr_user_id %}
+{% if author_profile.flattr_user_id %}
 <script type="text/javascript">
 /* <![CDATA[ */
     (function() {
         var s = document.createElement('script'), t = document.getElementsByTagName('script')[0];
         s.type = 'text/javascript';
         s.async = true;
-        s.src = 'http://api.flattr.com/js/0.6/load.js?mode=auto&uid={{article.author.profile.flattr_user_id}}';
+        s.src = 'http://api.flattr.com/js/0.6/load.js?mode=auto&uid={{author_profile.flattr_user_id}}';
         t.parentNode.insertBefore(s, t);
     })();
 /* ]]> */
@@ -76,59 +70,21 @@
 
 {% block narrow_col_right %}
 
-{% if article.author.profile.flattr_user_id %}
+{% if author_profile.flattr_user_id %}
 <h3 style="text-align: center">Support this Author</h3>
 <p style="text-align: center">
 <a class="FlattrButton" style="display:none;"
     title="{{article.title}}"
-    rel="flattr;uid:{{article.author.profile.flattr_user_id}};category:text;tags:opengl,article,nehe,gamedev;"
+    rel="flattr;uid:{{author_profile.flattr_user_id}};category:text;tags:opengl,article,nehe,gamedev;"
     href="http://nehe.gamedev.net{{article.get_absolute_url}}">
 </a>
 </p>
 {% endif %}
 
-
-<div style="text-align: center; padding:10px;">
-{% if article.author.profile.adsense_code %}
-<script type="text/javascript"><!--
-google_ad_client = "{{article.author.profile.adsense_code}}";
-/* Nehe_Skyscraper */
-google_ad_slot = "{{article.author.profile.adsense_slot}}";
-google_ad_width = 160;
-google_ad_height = 600;
-//-->
-</script>
-<script type="text/javascript"
-src="http://pagead2.googlesyndication.com/pagead/show_ads.js">
-</script>
-{% else %}
-<script type='text/javascript'>
-    GA_googleFillSlot("Skyscraper_NeHe");
-</script>
-{% endif %}
-</div>
-{% endblock %}
-
-{% block adsense_horizontal %}
-{% if article.author.profile.leaderboard_adsense_code %}
-    <script type="text/javascript"><!--
-    google_ad_client = "{{article.author.profile.leaderboard_adsense_code}}";
-    /* Leaderboard_NeHe */
-    google_ad_slot = "{{article.author.profile.leaderboard_adsense_slot}}";
-    google_ad_width = 728;
-    google_ad_height = 90;
-    //-->
-    </script>
-    <script type="text/javascript"
-    src="http://pagead2.googlesyndication.com/pagead/show_ads.js">
-    </script>    
-{% else %}
-    {{block.super}}
-{% endif %}
 {% endblock %}
 
 {% block copyright %}
-    {% if article.author.profile.license_under_cc %}
+    {% if author_profile.license_under_cc %}
     <a rel="license" href="http://creativecommons.org/licenses/by-nc/3.0/">
         <img alt="Creative Commons Licence" style="border-width:0" src="http://i.creativecommons.org/l/by-nc/3.0/88x31.png" />
     </a>
@@ -136,7 +92,7 @@ src="http://pagead2.googlesyndication.com/pagead/show_ads.js">
     This <span xmlns:dct="http://purl.org/dc/terms/" href="http://purl.org/dc/dcmitype/Text" rel="dct:type">work</span> is licensed under a <a rel="license" href="http://creativecommons.org/licenses/by-nc/3.0/">Creative Commons Attribution-NonCommercial 3.0 Unported License</a>.
     <br/><br/>
     {% endif %}
-    © 1997-2012 {{article.author.first_name}} {{article.author.last_name}}. All rights reserved.<br/>
+    © 1997-2014 {{author_name}}. All rights reserved.<br/>
 {% endblock %}
 
 {% block js %}
@@ -149,5 +105,5 @@ src="http://pagead2.googlesyndication.com/pagead/show_ads.js">
         po.src = 'https://apis.google.com/js/plusone.js';
         var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(po, s);
       })();
-    </script>    
+    </script>
 {% endblock %}

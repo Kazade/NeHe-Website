@@ -43,6 +43,11 @@ _POTENTIAL_SOCKET_LOCATIONS = (
 
 _connect_kwargs = {}
 
+
+
+_OS_NAME = os.name
+
+
 def SetConnectKwargs(**kwargs):
   """Sets the keyword args (host, user, etc) to pass to MySQLdb.connect()."""
 
@@ -68,14 +73,40 @@ try:
   from MySQLdb import *
 
 
+
+  __import__('MySQLdb.constants', globals(), locals(), ['*'])
+except ImportError:
+
+  def connect(instance=None, database=None):
+    logging.error('The rdbms API (Google Cloud SQL) is not available because '
+                  'the MySQLdb library could not be loaded. Please see the SDK '
+                  'documentation for installation instructions.')
+
+    raise NotImplementedError('Unable to find the MySQLdb library')
+else:
+
+
   def connect(instance=None, database=None, **kwargs):
     merged_kwargs = _connect_kwargs.copy()
     if database:
       merged_kwargs['db'] = database
     merged_kwargs.update(kwargs)
+    if 'password' in merged_kwargs:
+      merged_kwargs['passwd'] = merged_kwargs.pop('password')
     host = merged_kwargs.get('host')
     if ((not host or host == 'localhost') and
-        not merged_kwargs.get('unix_socket')):
+        not merged_kwargs.get('unix_socket') and
+        _OS_NAME == 'posix'):
+
+
+
+
+
+
+
+
+
+
       socket = FindUnixSocket()
       if socket:
         merged_kwargs['unix_socket'] = socket
@@ -84,17 +115,13 @@ try:
             'Unable to find MySQL socket file.  Use --mysql_socket to '
             'specify its location manually.')
     logging.info('Connecting to MySQL with kwargs %r', merged_kwargs)
-    return MySQLdb.connect(**merged_kwargs)
-
-except ImportError:
-  logging.warning('The rdbms API is not available because the MySQLdb '
-                  'library could not be loaded.')
-
-
-  def connect(instance=None, database=None):
-    raise NotImplementedError(
-        'Unable to find the MySQLdb library. Please see the SDK '
-        'documentation for installation instructions.')
+    try:
+      return MySQLdb.connect(**merged_kwargs)
+    except MySQLdb.Error:
+      logging.critical(
+          'MySQL connection failed! Ensure that you have provided correct '
+          'values for the --mysql_* flags when running dev_appserver.py')
+      raise
 
 
 def set_instance(instance):

@@ -49,6 +49,8 @@ __all__ = ['BLOB_INFO_KIND',
            'BLOB_RANGE_HEADER',
            'MAX_BLOB_FETCH_SIZE',
            'UPLOAD_INFO_CREATION_HEADER',
+           'CLOUD_STORAGE_OBJECT_HEADER',
+           'GS_PREFIX',
            'BlobFetchSizeTooLargeError',
            'BlobKey',
            'BlobNotFoundError',
@@ -56,9 +58,15 @@ __all__ = ['BLOB_INFO_KIND',
            'PermissionDeniedError',
            'Error',
            'InternalError',
+           'create_rpc',
            'create_upload_url',
+           'create_upload_url_async',
            'delete',
+           'delete_async',
            'fetch_data',
+           'fetch_data_async',
+           'create_gs_key',
+           'create_gs_key_async',
           ]
 
 
@@ -76,9 +84,12 @@ BLOB_RANGE_HEADER = 'X-AppEngine-BlobRange'
 
 MAX_BLOB_FETCH_SIZE = (1 << 20) - (1 << 15)
 
+GS_PREFIX = '/gs/'
+
 
 
 UPLOAD_INFO_CREATION_HEADER = 'X-AppEngine-Upload-Creation'
+CLOUD_STORAGE_OBJECT_HEADER = 'X-AppEngine-Cloud-Storage-Object'
 _BASE_CREATION_HEADER_FORMAT = '%Y-%m-%d %H:%M:%S'
 
 class Error(Exception):
@@ -107,7 +118,6 @@ class _CreationFormatError(Error):
 
 class PermissionDeniedError(Error):
   """Raised when permissions are lacking for a requested operation."""
-
 
 
 def _ToBlobstoreError(error):
@@ -196,20 +206,97 @@ def _parse_creation(creation_string, field_name):
   return datetime.datetime(*timestamp[:6] + tuple([microsecond]))
 
 
+def create_rpc(deadline=None, callback=None):
+  """Creates an RPC object for use with the blobstore API.
+
+  Args:
+    deadline: Optional deadline in seconds for the operation; the default
+      is a system-specific deadline (typically 5 seconds).
+    callback: Optional callable to invoke on completion.
+
+  Returns:
+    An apiproxy_stub_map.UserRPC object specialized for this service.
+  """
+  return apiproxy_stub_map.UserRPC('blobstore', deadline, callback)
+
+
+def _make_async_call(rpc, method, request, response,
+                     get_result_hook, user_data):
+  if rpc is None:
+    rpc = create_rpc()
+  rpc.make_call(method, request, response, get_result_hook, user_data)
+  return rpc
+
+
+def _get_result_hook(rpc):
+  try:
+    rpc.check_success()
+  except apiproxy_errors.ApplicationError, err:
+    raise _ToBlobstoreError(err)
+  hook = rpc.user_data
+  return hook(rpc)
+
+
 def create_upload_url(success_path,
-                      _make_sync_call=None,
                       max_bytes_per_blob=None,
-                      max_bytes_total=None):
+                      max_bytes_total=None,
+                      rpc=None,
+                      gs_bucket_name=None):
   """Create upload URL for POST form.
 
   Args:
     success_path: Path within application to call when POST is successful
       and upload is complete.
-    _make_sync_call: Used for dependency injection in tests.
     max_bytes_per_blob: The maximum size in bytes that any one blob in the
       upload can be or None for no maximum size.
     max_bytes_total: The maximum size in bytes that the aggregate sizes of all
       of the blobs in the upload can be or None for no maximum size.
+    rpc: Optional UserRPC object.
+    gs_bucket_name: The Google Storage bucket name that the blobs should be
+      uploaded to. The application's service account must have the correct
+      permissions to write to this bucket. The bucket name may be of the foramt
+      'bucket/path/', in which case the included path will be prepended to the
+      uploaded object name.
+
+  Returns:
+    The upload URL.
+
+  Raises:
+    TypeError: If max_bytes_per_blob or max_bytes_total are not integral types.
+    ValueError: If max_bytes_per_blob or max_bytes_total are not
+      positive values.
+  """
+  rpc = create_upload_url_async(success_path,
+                                max_bytes_per_blob=max_bytes_per_blob,
+                                max_bytes_total=max_bytes_total,
+                                rpc=rpc,
+                                gs_bucket_name=gs_bucket_name)
+  return rpc.get_result()
+
+
+def create_upload_url_async(success_path,
+                            max_bytes_per_blob=None,
+                            max_bytes_total=None,
+                            rpc=None,
+                            gs_bucket_name=None):
+  """Create upload URL for POST form -- async version.
+
+  Args:
+    success_path: Path within application to call when POST is successful
+      and upload is complete.
+    max_bytes_per_blob: The maximum size in bytes that any one blob in the
+      upload can be or None for no maximum size.
+    max_bytes_total: The maximum size in bytes that the aggregate sizes of all
+      of the blobs in the upload can be or None for no maximum size.
+    rpc: Optional UserRPC object.
+    gs_bucket_name: The Google Storage bucket name that the blobs should be
+      uploaded to. The application's service account must have the correct
+      permissions to write to this bucket. The bucket name may be of the foramt
+      'bucket/path/', in which case the included path will be prepended to the
+      uploaded object name.
+
+  Returns:
+    A UserRPC whose result will be the upload URL.
 
   Raises:
     TypeError: If max_bytes_per_blob or max_bytes_total are not integral types.
@@ -219,12 +306,6 @@ def create_upload_url(success_path,
   request = blobstore_service_pb.CreateUploadURLRequest()
   response = blobstore_service_pb.CreateUploadURLResponse()
   request.set_success_path(success_path)
-
-  if _make_sync_call is not None:
-    if not callable(_make_sync_call):
-      raise TypeError('_make_sync_call must be callable')
-  else:
-    _make_sync_call = apiproxy_stub_map.MakeSyncCall
 
   if max_bytes_per_blob is not None:
     if not isinstance(max_bytes_per_blob, (int, long)):
@@ -247,36 +328,65 @@ def create_upload_url(success_path,
       raise ValueError('max_bytes_total can not be less'
                        ' than max_upload_size_per_blob_bytes')
 
-  try:
-    _make_sync_call('blobstore', 'CreateUploadURL', request, response)
-  except apiproxy_errors.ApplicationError, e:
-    raise _ToBlobstoreError(e)
+  if gs_bucket_name is not None:
+    if not isinstance(gs_bucket_name, basestring):
+      raise TypeError('gs_bucket_name must be a string.')
+    request.set_gs_bucket_name(gs_bucket_name)
 
-  return response.url()
+  return _make_async_call(rpc, 'CreateUploadURL', request, response,
+                          _get_result_hook, lambda rpc: rpc.response.url())
 
 
-def delete(blob_keys, _make_sync_call=apiproxy_stub_map.MakeSyncCall):
+
+
+def delete(blob_keys, rpc=None, _token=None):
   """Delete a blob from Blobstore.
 
   Args:
     blob_keys: Single instance or list of blob keys.  A blob-key can be either
       a string or an instance of BlobKey.
-    _make_sync_call: Used for dependency injection in tests.
+    rpc: Optional UserRPC object.
+
+  Returns:
+    None.
   """
+
+
+
+  rpc = delete_async(blob_keys, rpc, _token)
+  return rpc.get_result()
+
+
+
+
+def delete_async(blob_keys, rpc=None, _token=None):
+  """Delete a blob from Blobstore -- async version.
+
+  Args:
+    blob_keys: Single instance or list of blob keys.  A blob-key can be either
+      a string or an instance of BlobKey.
+    rpc: Optional UserRPC object.
+
+  Returns:
+    A UserRPC whose result will be None.
+  """
+
+
+
   if isinstance(blob_keys, (basestring, BlobKey)):
     blob_keys = [blob_keys]
   request = blobstore_service_pb.DeleteBlobRequest()
   for blob_key in blob_keys:
     request.add_blob_key(str(blob_key))
+  if _token:
+    request.set_token(_token)
   response = api_base_pb.VoidProto()
-  try:
-    _make_sync_call('blobstore', 'DeleteBlob', request, response)
-  except apiproxy_errors.ApplicationError, e:
-    raise _ToBlobstoreError(e)
+
+  return _make_async_call(rpc, 'DeleteBlob', request, response,
+                          _get_result_hook, lambda rpc: None)
 
 
-def fetch_data(blob_key, start_index, end_index,
-               _make_sync_call=apiproxy_stub_map.MakeSyncCall):
+def fetch_data(blob_key, start_index, end_index, rpc=None):
   """Fetch data for blob.
 
   See docstring for ext.blobstore.fetch_data for more details.
@@ -287,10 +397,34 @@ def fetch_data(blob_key, start_index, end_index,
     start_index: Start index of blob data to fetch.  May not be negative.
     end_index: End index (exclusive) of blob data to fetch.  Must be
       >= start_index.
+    rpc: Optional UserRPC object.
 
   Returns:
-    str containing partial data of blob.  See docstring for
+    A str containing partial data of blob.  See docstring for
     ext.blobstore.fetch_data for more details.
+
+  Raises:
+    See docstring for ext.blobstore.fetch_data for more details.
+  """
+  rpc = fetch_data_async(blob_key, start_index, end_index, rpc)
+  return rpc.get_result()
+
+
+def fetch_data_async(blob_key, start_index, end_index, rpc=None):
+  """Fetch data for blob -- async version.
+
+  See docstring for ext.blobstore.fetch_data for more details.
+
+  Args:
+    blob: BlobKey, str or unicode representation of BlobKey of
+      blob to fetch data from.
+    start_index: Start index of blob data to fetch.  May not be negative.
+    end_index: End index (exclusive) of blob data to fetch.  Must be
+      >= start_index.
+    rpc: Optional UserRPC object.
+
+  Returns:
+    A UserRPC whose result will be a str as returned by fetch_data().
 
   Raises:
     See docstring for ext.blobstore.fetch_data for more details.
@@ -332,9 +466,60 @@ def fetch_data(blob_key, start_index, end_index,
   request.set_start_index(start_index)
   request.set_end_index(end_index)
 
-  try:
-    _make_sync_call('blobstore', 'FetchData', request, response)
-  except apiproxy_errors.ApplicationError, e:
-    raise _ToBlobstoreError(e)
+  return _make_async_call(rpc, 'FetchData', request, response,
+                          _get_result_hook, lambda rpc: rpc.response.data())
 
-  return response.data()
+
+def create_gs_key(filename, rpc=None):
+  """Create an encoded key for a Google Storage file.
+
+  It is safe to persist this key for future use.
+
+  Args:
+    filename: The filename of the google storage object to create the key for.
+    rpc: Optional UserRPC object.
+
+  Returns:
+    An encrypted blob key string.
+  """
+  rpc = create_gs_key_async(filename, rpc)
+  return rpc.get_result()
+
+
+def create_gs_key_async(filename, rpc=None):
+  """Create an encoded key for a google storage file - async version.
+
+  It is safe to persist this key for future use.
+
+  Args:
+    filename: The filename of the google storage object to create the
+      key for.
+    rpc: Optional UserRPC object.
+
+  Returns:
+    A UserRPC whose result will be a string as returned by create_gs_key.
+
+  Raises:
+    TypeError: If filename is not a string.
+    ValueError: If filename is not in the format '/gs/bucket_name/object_name'
+  """
+
+  if not isinstance(filename, basestring):
+    raise TypeError('filename must be str: %s' % filename)
+  if not filename.startswith(GS_PREFIX):
+    raise ValueError('filename must start with "/gs/": %s' % filename)
+  if not '/' in filename[4:]:
+    raise ValueError('filename must have the format '
+                     '"/gs/bucket_name/object_name": %s' % filename)
+
+  request = blobstore_service_pb.CreateEncodedGoogleStorageKeyRequest()
+  response = blobstore_service_pb.CreateEncodedGoogleStorageKeyResponse()
+
+  request.set_filename(filename)
+
+  return _make_async_call(rpc,
+                          'CreateEncodedGoogleStorageKey',
+                          request,
+                          response,
+                          _get_result_hook,
+                          lambda rpc: rpc.response.blob_key())
